@@ -1881,7 +1881,7 @@ _CHAT_ACTION_INSTRUCTIONS = """
 
 ## Kako da izvršiš akciju
 
-Kada korisnik potvrdi da želi da upišeš/obrišeš podatke, na KRAJU svog odgovora dodaj TAČNO ovaj tag (ništa posle):
+Kada korisnik potvrdi da želi da upišeš/obrišeš podatke, napiši prijatan odgovor koji opisuje šta radiš (projekat, vreme, komentar), a na SAMOM KRAJU dodaj akcioni tag (ništa posle njega):
 
 ⚙{"tool":"IME_ALATA", "arg1":"val1", "arg2":"val2"}⚙
 
@@ -2065,9 +2065,10 @@ async def chat(req: ChatRequest, session: dict = Depends(check_auth)):
                         tool_result = await fn(**tool_args)
                         result_str = str(tool_result)
                         _log_event(session["username"], "chat", tool_name, {"args": tool_args})
+                        clean_text += "\n\n✅ Urađeno."
                     except Exception as e:
                         result_str = f"Greška: {e}"
-                    clean_text += f"\n\n_[{tool_name}: {result_str}]_"
+                        clean_text += f"\n\n❌ {e}"
 
             return {"role": "assistant", "content": clean_text or "Žao mi je, nisam uspela da odgovorim. Pokušaj ponovo."}
 
