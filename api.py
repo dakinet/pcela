@@ -564,13 +564,31 @@ def _build_user_context_sync(session: dict) -> str:
         [r for r in month_recs if r["startTime"]["$date"] >= _day_start_ms],
         key=lambda x: x["startTime"]["$date"],
     )
+
+    # IDs za danas — poseban DDP subscription poziv
+    today_id_map: dict[int, str] = {}
+    try:
+        ddp_ids = MeteorDDP(_env("METEOR_WSS_URL"))
+        if ddp_ids.connect(timeout=8):
+            ddp_ids.login(session.get("username", _env("USERNAME")),
+                          session.get("password", _env("PASSWORD")))
+            id_recs = ddp_ids.get_request_time_ids_for_day(
+                session.get("user_id", _env("USER_ID")), _day_start_ms, e_ms
+            )
+            ddp_ids.close()
+            for ir in id_recs:
+                today_id_map[ir["start_ms"]] = ir["id"]
+    except Exception:
+        pass
+
     if today_recs:
         today_h = round(sum(r["hours"] for r in today_recs), 2)
         lines.append(f"Danas: {len(today_recs)} zapisa, **{today_h}h**")
         for r in today_recs:
-            rid = _oid_value(r.get("_id", ""))
+            st_ms = r["startTime"]["$date"]
+            rid = today_id_map.get(st_ms, "")
             lines.append(
-                f"  - [{rid}] {_ms_to_str(r['startTime']['$date'])}–{_ms_to_str(r['endTime']['$date'])}"
+                f"  - [{rid}] {_ms_to_str(st_ms)}–{_ms_to_str(r['endTime']['$date'])}"
                 f" | {r.get('requestName', '?')} | {r.get('comment', '') or '-'}"
             )
     else:
