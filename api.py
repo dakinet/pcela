@@ -1759,7 +1759,8 @@ def _chat_search_projects(pojam: str, domen: str = "") -> str:
         if domain_name != cur_domain:
             cur_domain = domain_name
             lines.append(f"\n[{domain_name}]")
-        lines.append(f"  #{num}  {name}  (id={act_id})")
+        lines.append(f"  project_number={num} → {name}")
+    lines.append("\n⚠ KRITIČNO: U tvi_log pozivu, project_number mora biti TAČNO prepisana cifra iza 'project_number=' iz gornje liste. Nikad ne pišuj broj iz memorije.")
     return "\n".join(lines)
 
 
@@ -1994,7 +1995,10 @@ async def chat(req: ChatRequest, session: dict = Depends(check_auth)):
                 contents.append({"role": "user", "parts": [{"text": (
                     f"[Rezultat tvi_search]\n{search_result}\n\n"
                     "Obavesti korisnika koji projekat si pronašla i šta planiraš da uradiš "
-                    "(vreme, komentar). NEMOJ sada pozvati tvi_log — sačekaj eksplicitnu potvrdu korisnika."
+                    "(vreme, komentar). KRITIČNO: U svom odgovoru OBAVEZNO navedi tačan "
+                    "project_number u formatu 'project_number=XXXX' — prepiši cifru DOSLOVNO "
+                    "iz reda 'project_number=...' u rezultatima iznad. "
+                    "NEMOJ sada pozvati tvi_log — sačekaj eksplicitnu potvrdu korisnika."
                 )}]})
                 continue
 
