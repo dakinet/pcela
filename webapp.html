@@ -2068,7 +2068,7 @@ function closeKmForm() {
   document.querySelector('.action-row').classList.remove('hidden');
 }
 
-function onKmCarChange() {
+async function onKmCarChange() {
   const carId = document.getElementById('km-car').value;
   const info = document.getElementById('km-car-info');
   const startInput = document.getElementById('km-start');
@@ -2079,15 +2079,30 @@ function onKmCarChange() {
     return;
   }
   const store = _getKmStore();
-  const lastKm = store[carId];
+  let lastKm = store[carId];
   if (lastKm) {
     info.innerHTML = `Poslednja zabeležena km: <b>${lastKm}</b> — automatski upisana kao početna.`;
     info.classList.remove('hidden');
     startInput.value = lastKm;
   } else {
-    info.innerHTML = `Prvo korišćenje ovog auta — unesi početnu kilometražu.`;
+    // Pokušaj sa servera (drugi uređaj ili obrisani localStorage)
+    info.innerHTML = `<span style="color:#888">Učitavam poslednju km...</span>`;
     info.classList.remove('hidden');
-    startInput.value = '';
+    try {
+      const d = await api(`/api/mileage/last-km?car_id=${encodeURIComponent(carId)}`);
+      if (d.last_km != null) {
+        lastKm = d.last_km;
+        _setKmStore({...store, [carId]: lastKm});
+        info.innerHTML = `Poslednja zabeležena km: <b>${lastKm}</b> — automatski upisana kao početna.`;
+        startInput.value = lastKm;
+      } else {
+        info.innerHTML = `Prvo korišćenje ovog auta — unesi početnu kilometražu.`;
+        startInput.value = '';
+      }
+    } catch {
+      info.innerHTML = `Prvo korišćenje ovog auta — unesi početnu kilometražu.`;
+      startInput.value = '';
+    }
   }
   calcKm();
 }

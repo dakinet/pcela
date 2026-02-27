@@ -2275,6 +2275,23 @@ async def get_mileage(
     return {"entries": entries, "total_km": total_km, "total_din": total_din}
 
 
+@app.get("/api/mileage/last-km")
+async def mileage_last_km(
+    car_id: str = Query(..., description="ID automobila"),
+    session: dict = Depends(check_auth),
+):
+    """Vraća poslednju krajnju kilometražu za zadati auto i korisnika."""
+    _ensure_mileage_table()
+    conn = sqlite3.connect(PROJECTS_DB)
+    row = conn.execute(
+        "SELECT end_km FROM mileage_log WHERE username = ? AND car_id = ? "
+        "ORDER BY date DESC, id DESC LIMIT 1",
+        (session["username"], car_id),
+    ).fetchone()
+    conn.close()
+    return {"last_km": row[0] if row else None}
+
+
 @app.get("/api/mileage/history")
 async def mileage_history(
     od: str = Query(default="", description="DD.MM.YYYY"),
