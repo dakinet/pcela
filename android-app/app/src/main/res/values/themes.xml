@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.Pcela" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <item name="colorPrimary">#1e3a5f</item>
+        <item name="colorPrimaryVariant">#2563eb</item>
+        <item name="android:statusBarColor">#1e3a5f</item>
+        <item name="android:navigationBarColor">#1e3a5f</item>
+        <item name="android:windowLightStatusBar">false</item>
+    </style>
+</resources>

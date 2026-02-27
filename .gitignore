@@ -1,0 +1,26 @@
+# Kredencijali i lokalna konfiguracija
+.env
+accounts.csv
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Lokalna baza projekata i automobila
+projects/
+
+# Claude lokalni podaci
+.claude/
+
+# Android build
+android-app/**/build/
+android-app/**/.gradle/
+android-app/**/.idea/
+android-app/**/*.iml
+android-app/local.properties
+
+# Razno
+*.log
+*.sqlite
+*.db

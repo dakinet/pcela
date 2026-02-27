@@ -1,0 +1,3007 @@
+<!DOCTYPE html>
+<html lang="sr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Pčela – Evidencija radnog vremena</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🐝</text></svg>">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, -apple-system, sans-serif; background: #f0f4f8; color: #1a202c; min-height: 100vh; }
+
+    /* ── Header ── */
+    .header { background: #1e3a5f; color: white; padding: 0 1.25rem; display: flex; align-items: center; justify-content: space-between; height: 52px; }
+    .header h1 { font-size: 1.15rem; font-weight: 700; letter-spacing: .05em; margin: 0; }
+    .header h1 span { color: #60a5fa; }
+    .header .api-url { font-size: .7rem; color: rgba(255,255,255,.4); }
+
+    /* ── Bee logo + bubble ── */
+    .bee-logo-wrap { display: flex; align-items: center; cursor: pointer; user-select: none; gap: 0; }
+    .bee-logo-wrap:hover h1 span { color: #93c5fd; }
+    .bee-bubble {
+      position: relative;
+      margin-left: 14px;
+      background: #fff;
+      color: #1e3a5f;
+      border-radius: 12px;
+      padding: .2rem .6rem;
+      font-size: .7rem;
+      font-weight: 700;
+      white-space: nowrap;
+      filter: drop-shadow(0 2px 7px rgba(0,0,0,.35));
+      animation: beeBounce 2.6s ease-in-out infinite;
+      flex-shrink: 0;
+    }
+    /* Kukica ka levo (prema pčeli) */
+    .bee-bubble::before {
+      content: '';
+      position: absolute;
+      right: 100%;
+      top: 50%;
+      transform: translateY(-50%);
+      border: 6px solid transparent;
+      border-right-color: #fff;
+    }
+    @keyframes beeBounce {
+      0%,100% { transform: translateY(0) scale(1); opacity: 1; }
+      30%      { transform: translateY(-4px) scale(1.04); opacity: 1; }
+      60%      { transform: translateY(2px) scale(.98); opacity: .92; }
+    }
+
+    /* ── Tabs ── */
+    .tabs { background: #1e3a5f; display: flex; border-top: 1px solid rgba(255,255,255,.1); }
+    .tab { flex: 1; padding: .55rem; text-align: center; color: rgba(255,255,255,.55); font-size: .82rem; font-weight: 500; cursor: pointer; border: none; background: none; transition: color .15s; border-bottom: 2px solid transparent; }
+    .tab.active { color: #fff; border-bottom-color: #60a5fa; }
+    .tab:hover { color: #fff; }
+
+    /* ── Layout ── */
+    .main { max-width: 640px; margin: 0 auto; padding: 1rem; }
+    .section { display: none; }
+    .section.active { display: block; }
+
+    /* ── Cards ── */
+    .card { background: #fff; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,.09); }
+
+    /* ── Date nav ── */
+    .date-nav { display: flex; align-items: center; justify-content: space-between; padding: .7rem 1rem; margin-bottom: .75rem; }
+    .date-nav .center { text-align: center; flex: 1; }
+    .date-nav .date-label { font-weight: 700; font-size: .95rem; color: #1e3a5f; }
+    .date-nav .date-sub  { font-size: .72rem; color: #9ca3af; margin-top: 1px; }
+    .btn-nav { background: none; border: 1px solid #e5e7eb; border-radius: 8px; width: 34px; height: 34px; cursor: pointer; color: #374151; font-size: 1.1rem; display: flex; align-items: center; justify-content: center; transition: background .15s; }
+    .btn-nav:hover { background: #f3f4f6; }
+
+    /* ── Summary ── */
+    .summary { display: flex; padding: .75rem 1rem; border-bottom: 1px solid #f1f5f9; margin-bottom: .75rem; }
+    .summary-item { flex: 1; text-align: center; }
+    .summary-val { font-size: 1.3rem; font-weight: 700; color: #1e3a5f; }
+    .summary-lbl { font-size: .7rem; color: #9ca3af; margin-top: 1px; }
+
+    /* ── Record card ── */
+    .records { display: flex; flex-direction: column; gap: .5rem; margin-bottom: .75rem; }
+    .rec { background: #fff; border-radius: 12px; padding: .9rem 1rem; box-shadow: 0 1px 3px rgba(0,0,0,.09); }
+    .rec-header { display: flex; align-items: flex-start; justify-content: space-between; gap: .5rem; }
+    .rec-time { font-weight: 700; font-size: .95rem; color: #1e3a5f; white-space: nowrap; }
+    .rec-hours { font-size: .78rem; color: #6b7280; margin-top: 1px; }
+    .rec-project { font-size: .82rem; color: #374151; margin-top: 4px; }
+    .rec-comment { font-size: .77rem; color: #9ca3af; font-style: italic; margin-top: 2px; }
+    .rec-actions { display: flex; gap: .35rem; flex-shrink: 0; }
+    .btn-ic { background: none; border: 1px solid #e5e7eb; border-radius: 8px; width: 30px; height: 30px; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: .85rem; transition: all .15s; }
+    .btn-ic.edit:hover  { background: #eff6ff; border-color: #bfdbfe; }
+    .btn-ic.del:hover   { background: #fef2f2; border-color: #fecaca; color: #ef4444; }
+    .btn-ic:disabled    { opacity: .25; cursor: not-allowed; }
+
+    /* ── Buttons ── */
+    .btn-primary   { background: #2563eb; color: #fff; border: none; border-radius: 10px; padding: .65rem 1.25rem; font-size: .88rem; font-weight: 600; cursor: pointer; width: 100%; transition: background .15s; }
+    .btn-primary:hover { background: #1d4ed8; }
+    .btn-primary:disabled { background: #93c5fd; cursor: not-allowed; }
+    .btn-secondary { background: #fff; color: #374151; border: 1px solid #d1d5db; border-radius: 10px; padding: .65rem 1.25rem; font-size: .88rem; font-weight: 500; cursor: pointer; transition: background .15s; }
+    .btn-secondary:hover { background: #f9fafb; }
+
+    /* ── Form ── */
+    .form-card { padding: 1.1rem; margin-bottom: .75rem; }
+    .form-title { font-weight: 700; font-size: .95rem; color: #1e3a5f; margin-bottom: .9rem; }
+    .form-group { margin-bottom: .8rem; }
+    .form-lbl { display: block; font-size: .76rem; font-weight: 600; color: #374151; margin-bottom: .28rem; }
+    .form-input { width: 100%; border: 1px solid #d1d5db; border-radius: 8px; padding: .55rem .75rem; font-size: .88rem; outline: none; transition: border .15s; background: #fff; color: #1a202c; }
+    .form-input:focus { border-color: #2563eb; }
+    .form-row { display: flex; gap: .65rem; }
+    .form-row .form-group { flex: 1; }
+    .form-btns { display: flex; gap: .5rem; margin-top: .9rem; }
+    .form-btns .btn-primary   { flex: 1; }
+    .form-btns .btn-secondary { flex: 0 0 auto; }
+    .check-row { display: flex; align-items: center; gap: .45rem; font-size: .83rem; color: #374151; cursor: pointer; }
+    .check-row input { width: 15px; height: 15px; cursor: pointer; accent-color: #2563eb; }
+
+    /* ── Project search dropdown ── */
+    .proj-wrap { position: relative; }
+    .proj-results { position: absolute; top: 100%; left: 0; right: 0; background: #fff; border: 1px solid #d1d5db; border-top: none; border-radius: 0 0 8px 8px; max-height: 200px; overflow-y: auto; z-index: 100; box-shadow: 0 4px 8px rgba(0,0,0,.1); }
+    .proj-item { padding: .45rem .75rem; cursor: pointer; font-size: .82rem; border-bottom: 1px solid #f3f4f6; display: flex; align-items: center; gap: .5rem; }
+    .proj-item:last-child { border-bottom: none; }
+    .proj-item:hover { background: #eff6ff; }
+    .proj-item .pi-num  { color: #2563eb; font-weight: 600; flex-shrink: 0; }
+    .proj-item .pi-name { flex: 1; color: #1a202c; }
+    .proj-item .pi-dom  { color: #9ca3af; font-size: .72rem; flex-shrink: 0; }
+    .proj-selected { background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; padding: .5rem .75rem; font-size: .83rem; display: flex; align-items: center; justify-content: space-between; }
+    .proj-selected .ps-name { color: #1e3a5f; font-weight: 600; flex: 1; }
+    .proj-clear { background: none; border: none; cursor: pointer; color: #9ca3af; font-size: 1rem; padding: 0 2px; line-height: 1; }
+    .proj-clear:hover { color: #ef4444; }
+
+    /* ── Mileage / Kilometraža ── */
+    .action-row { display: flex; gap: .5rem; margin-bottom: .75rem; }
+    .action-row .btn-primary { flex: 1; }
+    .btn-car { background: #f59e0b; color: #fff; border: none; border-radius: 10px; padding: .65rem 1rem; font-size: .88rem; font-weight: 600; cursor: pointer; transition: background .15s; display: flex; align-items: center; justify-content: center; gap: .35rem; flex: 0 0 auto; }
+    .btn-car:hover { background: #d97706; }
+    .km-card { padding: 1.1rem; margin-bottom: .75rem; }
+    .km-title { font-weight: 700; font-size: .95rem; color: #1e3a5f; margin-bottom: .9rem; display: flex; align-items: center; gap: .4rem; }
+    .km-select { width: 100%; border: 1px solid #d1d5db; border-radius: 8px; padding: .55rem .75rem; font-size: .88rem; outline: none; background: #fff; color: #1a202c; }
+    .km-select:focus { border-color: #f59e0b; }
+    .km-info { font-size: .77rem; color: #6b7280; margin-top: .3rem; }
+    .km-info b { color: #1e3a5f; }
+    .km-summary { background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: .6rem .8rem; font-size: .83rem; color: #92400e; margin-top: .7rem; display: none; }
+    .km-summary b { color: #78350f; }
+
+    /* ── Kilometraža sekcija (Danas + Istorija) ── */
+    .km-day { margin-top: .5rem; margin-bottom: .5rem; }
+    .km-day-toggle { display: flex; align-items: center; gap: .4rem; font-size: .82rem; font-weight: 600;
+                     color: #6b7280; padding: .45rem .1rem; cursor: pointer; user-select: none; }
+    .km-day-toggle:hover { color: #374151; }
+    .km-day-toggle .km-arrow { font-size: .65rem; transition: transform .2s; display: inline-block; }
+    .km-day-toggle .km-arrow.open { transform: rotate(90deg); }
+    .km-day-toggle .km-badge { background: #dbeafe; color: #1e40af; font-size: .7rem; font-weight: 700;
+                               padding: .1rem .4rem; border-radius: 9px; margin-left: .2rem; }
+    .km-day-body { overflow: hidden; max-height: 0; transition: max-height .25s ease-out; }
+    .km-day-body.open { max-height: 800px; transition: max-height .35s ease-in; }
+    .km-day-entry { background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 10px;
+                    padding: .55rem .75rem; margin-bottom: .35rem; font-size: .82rem; }
+    .km-day-entry .km-e-car { font-weight: 600; color: #0369a1; font-size: .84rem; }
+    .km-day-entry .km-e-range { color: #475569; margin-top: .15rem; }
+    .km-day-entry .km-e-range b { color: #0c4a6e; }
+    .km-day-entry .km-e-proj { color: #64748b; font-size: .78rem; margin-top: .1rem; }
+    .km-day-total { display: flex; justify-content: flex-end; gap: 1rem;
+                    font-size: .78rem; color: #0369a1; font-weight: 600;
+                    padding: .15rem .2rem 0; }
+    /* Istorija kilometraže */
+    .km-hist-block { background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 10px;
+                     padding: .6rem .75rem; margin-bottom: .5rem; }
+    .km-hist-day-hdr { display: flex; justify-content: space-between; font-weight: 600;
+                       font-size: .84rem; color: #0369a1; margin-bottom: .3rem; }
+    .km-hist-row { display: flex; justify-content: space-between; align-items: flex-start;
+                   padding: .25rem 0; border-top: 1px solid #e0f2fe; font-size: .82rem; }
+    .km-hist-row:first-child { border-top: none; }
+    .km-hist-row .khr-car { color: #1e3a5f; font-weight: 500; }
+    .km-hist-row .khr-km { color: #475569; font-size: .78rem; }
+    .km-hist-row .khr-total { text-align: right; white-space: nowrap; font-weight: 600; color: #0c4a6e; }
+    .km-hist-grand { background: #dbeafe; border-radius: 10px; padding: .7rem .9rem;
+                     display: flex; justify-content: space-between; align-items: center;
+                     margin-top: .3rem; }
+    .km-hist-grand .khg-big { font-size: 1.1rem; font-weight: 700; color: #1e40af; }
+    .km-hist-grand .khg-sub { font-size: .78rem; color: #3b82f6; }
+
+    /* ── History ── */
+    .period-card { padding: 1rem; margin-bottom: .75rem; }
+    .day-block { background: #fff; border-radius: 12px; margin-bottom: .5rem; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,.09); }
+    .day-hdr { background: #f8fafc; padding: .65rem 1rem; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #f1f5f9; }
+    .day-hdr .dh-name  { font-weight: 700; font-size: .88rem; color: #1e3a5f; }
+    .day-hdr .dh-total { font-size: .8rem; color: #6b7280; }
+    .day-row { padding: .55rem 1rem; border-bottom: 1px solid #f9fafb; display: flex; align-items: flex-start; justify-content: space-between; gap: .5rem; }
+    .day-row:last-child { border-bottom: none; }
+    .dr-time    { font-weight: 600; font-size: .78rem; color: #2563eb; }
+    .dr-project { font-size: .82rem; color: #374151; margin-top: 1px; }
+    .dr-comment { font-size: .75rem; color: #9ca3af; font-style: italic; }
+    .dr-hours   { font-size: .78rem; color: #6b7280; white-space: nowrap; padding-top: 1px; }
+    .hist-total { background: #1e3a5f; color: #fff; border-radius: 12px; padding: 1rem; text-align: center; margin-top: .5rem; }
+    .hist-total .ht-big { font-size: 1.4rem; font-weight: 700; }
+    .hist-total .ht-sub { font-size: .75rem; opacity: .65; margin-top: 3px; }
+    .missing-block { background: #fff7ed; border: 1px solid #fed7aa; border-radius: 12px; padding: .85rem 1rem; margin-bottom: .75rem; }
+    .missing-title { font-weight: 700; font-size: .82rem; color: #c2410c; margin-bottom: .5rem; }
+    .missing-day { display: inline-block; background: #ffedd5; color: #9a3412; font-size: .78rem; border-radius: 6px; padding: .2rem .55rem; margin: .2rem .2rem 0 0; }
+    .all-ok { background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 12px; padding: .75rem 1rem; margin-bottom: .75rem; color: #166534; font-weight: 600; font-size: .85rem; }
+
+    /* ── Projekti tab ── */
+    .search-card { padding: 1rem; margin-bottom: .75rem; }
+    .proj-list-item { background: #fff; border-radius: 10px; padding: .7rem 1rem; margin-bottom: .4rem; box-shadow: 0 1px 2px rgba(0,0,0,.08); display: flex; align-items: center; gap: .75rem; }
+    .pli-num  { font-weight: 700; color: #2563eb; font-size: .88rem; min-width: 48px; }
+    .pli-name { flex: 1; font-size: .83rem; color: #1a202c; }
+    .pli-dom  { font-size: .72rem; color: #9ca3af; white-space: nowrap; }
+
+    /* ── MCP tab ── */
+    .mcp-result { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: .85rem; font-size: .8rem; line-height: 1.45; white-space: pre-wrap; word-break: break-word; max-height: 320px; overflow-y: auto; margin: 0; color: #334155; }
+
+    /* ── Misc ── */
+    .empty { text-align: center; padding: 2rem; color: #9ca3af; font-size: .88rem; }
+    .ids-hint { font-size: .72rem; color: #9ca3af; text-align: center; padding: .35rem; display: flex; align-items: center; justify-content: center; gap: .4rem; }
+    .hidden { display: none !important; }
+
+    /* ── Spinner ── */
+    .spin { display: inline-block; width: 13px; height: 13px; border: 2px solid #e5e7eb; border-top-color: #2563eb; border-radius: 50%; animation: spin .6s linear infinite; vertical-align: middle; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Toast ── */
+    .toast { position: fixed; bottom: 1.25rem; left: 50%; transform: translateX(-50%) translateY(20px); background: #1e3a5f; color: #fff; padding: .6rem 1.25rem; border-radius: 10px; font-size: .83rem; box-shadow: 0 4px 12px rgba(0,0,0,.2); z-index: 999; opacity: 0; transition: all .25s; pointer-events: none; white-space: nowrap; }
+    .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+    .toast.ok  { background: #059669; }
+    .toast.err { background: #dc2626; }
+
+    /* ── Header right ── */
+    .header-right { display: flex; align-items: center; gap: .6rem; }
+    .header-icon { background: rgba(255,255,255,.12); border: 1px solid rgba(255,255,255,.22); color: #fff; border-radius: 50%; width: 36px; height: 36px; font-size: 1.1rem; display: flex; align-items: center; justify-content: center; transition: background .15s; flex-shrink: 0; text-decoration: none; }
+    .header-icon:hover { background: rgba(255,255,255,.28); }
+    .mic-btn { background: rgba(255,255,255,.12); border: 1px solid rgba(255,255,255,.22); color: #fff; border-radius: 50%; width: 36px; height: 36px; cursor: pointer; font-size: 1.1rem; display: flex; align-items: center; justify-content: center; transition: background .15s; flex-shrink: 0; }
+    .mic-btn:hover { background: rgba(255,255,255,.28); }
+
+    /* ── User menu ── */
+    .user-menu-wrap { position: relative; }
+    .user-btn { display: flex; align-items: center; gap: .45rem; background: rgba(255,255,255,.1); border: 1px solid rgba(255,255,255,.2); border-radius: 20px; padding: .25rem .6rem .25rem .3rem; cursor: pointer; color: #fff; transition: background .15s; max-width: 180px; }
+    .user-btn:hover { background: rgba(255,255,255,.22); }
+    .user-avatar { width: 26px; height: 26px; border-radius: 50%; background: #2563eb; font-size: .68rem; font-weight: 800; display: flex; align-items: center; justify-content: center; color: #fff; flex-shrink: 0; letter-spacing: -.5px; }
+    .user-btn-name { font-size: .72rem; color: rgba(255,255,255,.9); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 110px; }
+    .user-chevron { font-size: .6rem; color: rgba(255,255,255,.6); transition: transform .2s; flex-shrink: 0; }
+    .user-chevron.open { transform: rotate(180deg); }
+    .user-menu { position: absolute; top: calc(100% + 8px); right: 0; background: #fff; border-radius: 14px; box-shadow: 0 8px 32px rgba(0,0,0,.18); min-width: 230px; z-index: 1000; overflow: hidden; }
+    .user-menu-head { padding: 1rem 1rem .75rem; display: flex; align-items: center; gap: .75rem; background: #f8faff; border-bottom: 1px solid #e5e9f2; }
+    .um-avatar { width: 40px; height: 40px; border-radius: 50%; background: #2563eb; font-size: .95rem; font-weight: 800; display: flex; align-items: center; justify-content: center; color: #fff; flex-shrink: 0; }
+    .um-name { font-weight: 700; font-size: .88rem; color: #1e3a5f; line-height: 1.2; }
+    .um-uname { font-size: .73rem; color: #6b7280; margin-top: 1px; }
+    .user-menu-sep { height: 1px; background: #e5e9f2; margin: .25rem 0; }
+    .um-item { display: flex; align-items: center; gap: .6rem; width: 100%; padding: .65rem 1rem; border: none; background: none; cursor: pointer; font-size: .84rem; color: #374151; text-align: left; transition: background .12s; }
+    .um-item:hover { background: #f0f4ff; color: #1e3a5f; }
+    .um-item.danger { color: #dc2626; }
+    .um-item.danger:hover { background: #fef2f2; color: #b91c1c; }
+    .um-item-icon { font-size: 1rem; width: 20px; text-align: center; flex-shrink: 0; }
+    .um-version { padding: .4rem 1rem .6rem; font-size: .68rem; color: #9ca3af; text-align: center; }
+
+    /* ── Voice panel ── */
+    .v-bg { position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 500; }
+    .v-panel { position: fixed; bottom: 0; left: 0; right: 0; max-width: 640px; margin: 0 auto; background: #fff; border-radius: 20px 20px 0 0; padding: 0 1.25rem 2rem; z-index: 501; transform: translateY(100%); transition: transform .3s cubic-bezier(.4,0,.2,1); max-height: 90vh; overflow-y: auto; }
+    .v-panel.open { transform: translateY(0); }
+    .v-handle { width: 40px; height: 4px; background: #e5e7eb; border-radius: 2px; margin: .85rem auto .9rem; }
+    .v-title { font-weight: 700; font-size: 1rem; color: #1e3a5f; text-align: center; margin-bottom: 1.1rem; }
+    .v-mic-area { display: flex; flex-direction: column; align-items: center; gap: .5rem; margin-bottom: 1rem; }
+    .v-ring { width: 76px; height: 76px; border-radius: 50%; background: #eff6ff; border: 3px solid #bfdbfe; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all .2s; }
+    .v-ring:hover { background: #dbeafe; }
+    .v-ring.active { background: #fff1f2; border-color: #fca5a5; animation: vpulse 1.2s ease-in-out infinite; }
+    @keyframes vpulse { 0%,100% { box-shadow: 0 0 0 0 rgba(239,68,68,.25); } 50% { box-shadow: 0 0 0 14px rgba(239,68,68,0); } }
+    .v-ring-icon { font-size: 2.2rem; line-height: 1; pointer-events: none; }
+    .v-state { font-size: .82rem; color: #6b7280; }
+    .v-section-lbl { font-size: .72rem; color: #9ca3af; margin-bottom: .25rem; }
+    .v-transcript { background: #f8fafc; border-radius: 8px; padding: .6rem .8rem; font-size: .85rem; color: #374151; font-style: italic; margin-bottom: .65rem; }
+    .v-parsed { background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; padding: .65rem .85rem; font-size: .85rem; color: #1e3a5f; line-height: 1.6; margin-bottom: .85rem; }
+    .v-hint { font-size: .73rem; color: #9ca3af; text-align: center; line-height: 1.6; margin-bottom: 1rem; }
+    .v-proj-toggle { cursor: pointer; border-radius: 4px; padding: 1px 3px; margin: -1px -3px; transition: background .15s; }
+    .v-proj-toggle:hover { background: #dbeafe; }
+    .v-proj-arrow { font-size: .7rem; color: #6b7280; margin-left: 3px; transition: transform .2s; display: inline-block; }
+    .v-proj-arrow.open { transform: rotate(180deg); }
+    .v-candidates-dropdown { margin-top: .4rem; border-top: 1px solid #bfdbfe; padding-top: .4rem; }
+    .v-candidate-btn { display: block; width: 100%; text-align: left; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 7px; padding: .4rem .7rem; margin-bottom: .3rem; font-size: .81rem; color: #374151; cursor: pointer; transition: background .15s, border-color .15s; }
+    .v-candidate-btn:hover { background: #eff6ff; border-color: #93c5fd; }
+    .v-candidate-btn.selected { background: #dbeafe; border-color: #3b82f6; color: #1e40af; font-weight: 600; }
+    .v-btns { display: flex; gap: .5rem; margin-top: .25rem; }
+    .v-btns .btn-primary { flex: 1; }
+    .v-btns .btn-secondary { flex: 0 0 auto; }
+
+    /* ── About modal ── */
+    .about-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.52); z-index: 2000; display: flex; align-items: center; justify-content: center; }
+    .about-card { background: #fff; border-radius: 22px; padding: 2rem 1.75rem 1.5rem; max-width: 340px; width: 90%; text-align: center; position: relative; box-shadow: 0 24px 70px rgba(0,0,0,.28); }
+    .about-close { position: absolute; top: .7rem; right: .8rem; background: #f3f4f6; border: none; border-radius: 50%; width: 30px; height: 30px; cursor: pointer; font-size: .85rem; color: #6b7280; display: flex; align-items: center; justify-content: center; }
+    .about-close:hover { background: #e5e7eb; }
+    .about-bee { font-size: 3rem; margin-bottom: .4rem; animation: beeBounce 2.6s ease-in-out infinite; display: inline-block; }
+    .about-appname { font-size: 1.55rem; font-weight: 800; color: #1e3a5f; margin: 0 0 .2rem; }
+    .about-ver { background: #eff6ff; color: #2563eb; border-radius: 20px; padding: .15rem .65rem; font-size: .76rem; font-weight: 700; display: inline-block; margin-bottom: 1rem; }
+    .about-tagline { color: #4b5563; font-size: .85rem; line-height: 1.55; margin-bottom: .9rem; }
+    .about-sep { border-top: 1px solid #e5e7eb; margin: .8rem 0; }
+    .about-dev { color: #374151; font-size: .84rem; line-height: 1.55; margin-bottom: .6rem; }
+    .about-tech { color: #9ca3af; font-size: .7rem; letter-spacing: .04em; margin-bottom: .9rem; }
+    .about-copy { color: #9ca3af; font-size: .7rem; }
+
+    /* ── Login overlay ── */
+    .login-overlay { position: fixed; inset: 0; background: rgba(15,23,42,.88); z-index: 9999; display: flex; align-items: center; justify-content: center; }
+    .login-card { background: #fff; border-radius: 16px; padding: 2rem 1.75rem; width: min(380px, 92vw); box-shadow: 0 20px 60px rgba(0,0,0,.35); }
+    .login-title { font-size: 1.6rem; font-weight: 800; color: #1e3a5f; text-align: center; margin-bottom: .25rem; }
+    .login-title span { color: #2563eb; }
+    .login-sub { font-size: .8rem; color: #9ca3af; text-align: center; margin-bottom: 1.5rem; }
+    .login-err { background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; border-radius: 8px; padding: .5rem .75rem; font-size: .82rem; margin-bottom: .75rem; }
+
+    /* ── Chat ── */
+    .chat-outer { position: relative; height: calc(100dvh - 145px); overflow: hidden; }
+    .chat-wrap { display: flex; flex-direction: column; height: 100%; }
+    .chat-topbar { display: flex; align-items: center; justify-content: space-between; padding: .45rem .75rem; border-bottom: 1px solid #f1f5f9; background: #fff; flex-shrink: 0; }
+    .chat-topbar-title { font-weight: 700; color: #1e3a5f; font-size: .88rem; }
+    .chat-top-btn { background: none; border: 1px solid #e5e7eb; border-radius: 8px; width: 32px; height: 32px; cursor: pointer; font-size: .88rem; display: inline-flex; align-items: center; justify-content: center; transition: background .12s; }
+    .chat-top-btn:hover { background: #f3f4f6; }
+    .chat-sidebar { position: absolute; top: 0; right: 0; width: 72%; max-width: 290px; height: 100%; background: #fff; border-left: 1px solid #e5e7eb; z-index: 50; display: flex; flex-direction: column; box-shadow: -6px 0 24px rgba(0,0,0,.13); transform: translateX(0); transition: transform .22s ease; }
+    .chat-sidebar.hidden { transform: translateX(100%); pointer-events: none; }
+    .chat-sidebar-hdr { display: flex; align-items: center; justify-content: space-between; padding: .6rem .75rem; border-bottom: 1px solid #f1f5f9; font-weight: 700; font-size: .85rem; color: #1e3a5f; flex-shrink: 0; }
+    .chat-conv-new { margin: .6rem .75rem; background: #2563eb; color: #fff; border: none; border-radius: 8px; padding: .5rem; font-size: .8rem; font-weight: 600; cursor: pointer; width: calc(100% - 1.5rem); transition: background .12s; }
+    .chat-conv-new:hover { background: #1d4ed8; }
+    .conv-list { overflow-y: auto; flex: 1; }
+    .conv-item { padding: .55rem .75rem .55rem .85rem; cursor: pointer; border-bottom: 1px solid #f8fafc; position: relative; display: flex; flex-direction: column; gap: .1rem; transition: background .1s; }
+    .conv-item:hover { background: #f8fafc; }
+    .conv-item.active { background: #eff6ff; border-left: 3px solid #2563eb; padding-left: .6rem; }
+    .conv-title { font-size: .8rem; color: #1a202c; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-right: 1.6rem; font-weight: 500; line-height: 1.35; }
+    .conv-meta { font-size: .68rem; color: #9ca3af; }
+    .conv-del { position: absolute; right: .4rem; top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer; color: #d1d5db; font-size: .78rem; padding: 3px 5px; border-radius: 4px; line-height: 1; }
+    .conv-del:hover { color: #ef4444; background: #fef2f2; }
+    .chat-msgs { flex: 1; overflow-y: auto; padding: .75rem .5rem; display: flex; flex-direction: column; gap: .75rem; }
+    .chat-msg { display: flex; gap: .5rem; max-width: 88%; }
+    .chat-msg.user { align-self: flex-end; flex-direction: row-reverse; }
+    .chat-avatar { width: 30px; height: 30px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: .95rem; flex-shrink: 0; align-self: flex-end; }
+    .chat-msg.bot .chat-avatar { background: #fef9c3; }
+    .chat-msg.user .chat-avatar { background: #2563eb; font-size: .65rem; font-weight: 800; color: #fff; letter-spacing: -.5px; }
+    .chat-bubble { padding: .6rem .9rem; border-radius: 18px; font-size: .85rem; line-height: 1.55; word-break: break-word; }
+    .chat-msg.bot .chat-bubble { background: #fff; color: #1a202c; border-radius: 4px 18px 18px 18px; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
+    .chat-msg.user .chat-bubble { background: #2563eb; color: #fff; border-radius: 18px 4px 18px 18px; }
+    .chat-bubble code { background: rgba(0,0,0,.07); padding: .1rem .35rem; border-radius: 4px; font-size: .82em; font-family: monospace; }
+    .chat-msg.user .chat-bubble code { background: rgba(255,255,255,.2); }
+    .chat-chips { padding: .25rem .5rem .5rem; display: flex; flex-direction: column; gap: .3rem; }
+    .chip-group { display: flex; flex-wrap: wrap; align-items: center; gap: .3rem; }
+    .chip-cat { font-size: .68rem; font-weight: 600; color: #6b7280; text-transform: uppercase; letter-spacing: .04em; white-space: nowrap; padding: .1rem .1rem; }
+    .chat-chip { background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; border-radius: 16px; padding: .28rem .7rem; font-size: .76rem; cursor: pointer; transition: background .12s; white-space: nowrap; }
+    .chat-chip:hover { background: #dbeafe; }
+    .chat-chip.chip-del { background: #fef2f2; color: #b91c1c; border-color: #fecaca; }
+    .chat-chip.chip-del:hover { background: #fee2e2; }
+    .chat-chip.chip-edit { background: #fefce8; color: #854d0e; border-color: #fde68a; }
+    .chat-chip.chip-edit:hover { background: #fef08a; }
+    .chat-chip.chip-log { background: #f0fdf4; color: #166534; border-color: #bbf7d0; }
+    .chat-chip.chip-log:hover { background: #dcfce7; }
+    .chat-input-bar { background: #fff; border-top: 1px solid #e5e9f2; padding: .6rem .75rem; display: flex; gap: .5rem; align-items: flex-end; }
+    .chat-input { flex: 1; border: 1.5px solid #d1d5db; border-radius: 20px; padding: .5rem 1rem; font-size: .87rem; resize: none; min-height: 40px; max-height: 120px; font-family: inherit; line-height: 1.4; overflow-y: auto; }
+    .chat-input:focus { outline: none; border-color: #2563eb; }
+    .chat-send { background: #2563eb; color: #fff; border: none; border-radius: 50%; width: 40px; height: 40px; cursor: pointer; font-size: 1.1rem; flex-shrink: 0; transition: background .12s; display: flex; align-items: center; justify-content: center; }
+    .chat-send:hover { background: #1d4ed8; }
+    .chat-send:disabled { background: #9ca3af; cursor: not-allowed; }
+    .chat-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: #9ca3af; animation: cdot 1.2s infinite; margin: 0 1px; }
+    .chat-dot:nth-child(2) { animation-delay: .2s; }
+    .chat-dot:nth-child(3) { animation-delay: .4s; }
+    @keyframes cdot { 0%,60%,100%{transform:translateY(0)} 30%{transform:translateY(-5px)} }
+
+    /* ── Startup & hi-tech ── */
+    #startup-overlay { position:fixed; inset:0; background:#060d1e; z-index:20000; display:flex; align-items:center; justify-content:center; transition:opacity .7s ease; }
+    #startup-overlay.fade-out { opacity:0; pointer-events:none; }
+    #hex-canvas { position:absolute; inset:0; opacity:.55; }
+    #startup-glow { position:absolute; width:420px; height:420px; border-radius:50%; background:radial-gradient(circle, rgba(251,191,36,.18) 0%, transparent 70%); pointer-events:none; transition:opacity .5s; opacity:0; }
+    #bee-el { position:fixed; left:50%; top:50%; z-index:20002; filter:drop-shadow(0 0 18px rgba(251,191,36,.95)); font-size:0; will-change:transform; }
+    #bee-el svg { display:block; }
+    .bee-wing-l { animation:wingL .11s ease-in-out infinite alternate; transform-origin:55% 85%; }
+    .bee-wing-r { animation:wingR .11s ease-in-out infinite alternate; transform-origin:45% 85%; }
+    @keyframes wingL { from{transform:rotate(-20deg) scaleY(1)} to{transform:rotate(-55deg) scaleY(.18)} }
+    @keyframes wingR { from{transform:rotate(20deg) scaleY(1)}  to{transform:rotate(55deg)  scaleY(.18)} }
+    #speech-bubble { position:fixed; z-index:20003; background:rgba(6,13,30,.92); border:1.5px solid rgba(251,191,36,.7); border-radius:16px 16px 16px 4px; padding:.75rem 1.1rem; max-width:280px; font-size:.9rem; color:#fef3c7; line-height:1.5; box-shadow:0 0 24px rgba(251,191,36,.3); opacity:0; transition:opacity .4s; pointer-events:none; }
+    #speech-bubble.visible { opacity:1; }
+    .s-cursor { display:inline-block; width:2px; height:1em; background:#fbbf24; margin-left:2px; vertical-align:middle; animation:blink .6s step-end infinite; }
+    @keyframes blink { 50%{opacity:0} }
+    #skip-hint { position:fixed; bottom:1.5rem; left:50%; transform:translateX(-50%); color:rgba(255,255,255,.3); font-size:.72rem; z-index:20004; letter-spacing:.08em; }
+    /* Hex grid body bg */
+    body::before { content:''; position:fixed; inset:0; background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='56' height='100'%3E%3Cpath d='M28 2 L54 16 L54 46 L28 60 L2 46 L2 16Z' fill='none' stroke='rgba(59,130,246,0.06)' stroke-width='1'/%3E%3Cpath d='M28 60 L54 74 L54 100' fill='none' stroke='rgba(59,130,246,0.06)' stroke-width='1'/%3E%3Cpath d='M2 46 L2 74 L28 60' fill='none' stroke='rgba(59,130,246,0.06)' stroke-width='1'/%3E%3C/svg%3E"); pointer-events:none; z-index:-1; opacity:.7; }
+    /* Header shimmer */
+    .header { background:linear-gradient(90deg,#1e3a5f 0%,#1a3356 40%,#22427a 60%,#1e3a5f 100%); background-size:200% 100%; animation:headerShimmer 8s linear infinite; }
+    @keyframes headerShimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
+    /* Card hover glow */
+    .card { transition:box-shadow .2s, transform .2s; }
+    .card:hover { box-shadow:0 4px 24px rgba(37,99,235,.13); }
+    /* Mic pulse */
+    .mic-btn.recording { animation:micPulse 1s ease-in-out infinite; }
+    @keyframes micPulse { 0%,100%{box-shadow:0 0 0 0 rgba(239,68,68,.5)} 50%{box-shadow:0 0 0 10px rgba(239,68,68,0)} }
+    /* Stat number count-up flicker */
+    @keyframes numFlicker { 0%{opacity:.4} 50%{opacity:1} 100%{opacity:.4} }
+    .num-loading { animation:numFlicker .5s ease-in-out 3; }
+
+    /* ── Admin log viewer ── */
+    .log-entry { background: #fff; border-radius: 10px; margin-bottom: .5rem; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,.07); }
+    .log-entry-head { display: flex; align-items: center; gap: .5rem; padding: .55rem .75rem; cursor: pointer; border-bottom: 1px solid transparent; }
+    .log-entry-head:hover { background: #f8faff; }
+    .log-entry.open .log-entry-head { border-bottom-color: #e5e9f2; }
+    .log-badge { font-size: .68rem; font-weight: 700; padding: .15rem .45rem; border-radius: 20px; flex-shrink: 0; text-transform: uppercase; }
+    .log-badge.log    { background: #dcfce7; color: #166534; }
+    .log-badge.parse-voice { background: #dbeafe; color: #1e40af; }
+    .log-badge.delete { background: #fee2e2; color: #991b1b; }
+    .log-badge.delete-day { background: #fef9c3; color: #854d0e; }
+    .log-badge.auth   { background: #f3e8ff; color: #6b21a8; }
+    .log-badge.auth.err { background: #fee2e2; color: #991b1b; }
+    .log-ts { font-size: .72rem; color: #9ca3af; flex-shrink: 0; }
+    .log-user { font-size: .78rem; font-weight: 600; color: #1e3a5f; }
+    .log-summary { font-size: .78rem; color: #374151; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .log-status { font-size: .7rem; padding: .1rem .4rem; border-radius: 10px; flex-shrink: 0; }
+    .log-status.ok   { background: #dcfce7; color: #166534; }
+    .log-status.err  { background: #fee2e2; color: #991b1b; }
+    .log-entry-body { padding: .6rem .75rem; background: #f8faff; font-size: .78rem; }
+    .log-kv { display: grid; grid-template-columns: 130px 1fr; gap: .15rem .5rem; }
+    .log-k { color: #6b7280; font-weight: 600; }
+    .log-v { color: #111827; word-break: break-all; }
+    .log-candidates { margin-top: .3rem; font-size: .73rem; color: #4b5563; font-style: italic; }
+  </style>
+</head>
+<body>
+
+<!-- Startup animation -->
+<div id="startup-overlay">
+  <canvas id="hex-canvas"></canvas>
+  <div id="startup-glow"></div>
+</div>
+<div id="bee-el">
+  <svg width="72" height="84" viewBox="0 0 72 84" xmlns="http://www.w3.org/2000/svg">
+    <!-- Wings -->
+    <ellipse class="bee-wing-l" cx="16" cy="30" rx="20" ry="10" fill="rgba(186,230,253,0.78)" transform="rotate(-25,16,30)"/>
+    <ellipse class="bee-wing-r" cx="56" cy="30" rx="20" ry="10" fill="rgba(186,230,253,0.78)" transform="rotate(25,56,30)"/>
+    <!-- Body -->
+    <ellipse cx="36" cy="56" rx="15" ry="21" fill="#fbbf24"/>
+    <path d="M21 50 Q36 46 51 50 Q36 54 21 50Z" fill="#1c1917" opacity=".85"/>
+    <path d="M21 59 Q36 55 51 59 Q36 63 21 59Z" fill="#1c1917" opacity=".85"/>
+    <path d="M22 68 Q36 64 50 68 Q36 72 22 68Z" fill="#1c1917" opacity=".85"/>
+    <!-- Head -->
+    <circle cx="36" cy="28" r="14" fill="#fbbf24"/>
+    <!-- Eyes -->
+    <circle cx="30" cy="26" r="3.5" fill="#111"/><circle cx="31" cy="25" r="1.2" fill="#fff"/>
+    <circle cx="42" cy="26" r="3.5" fill="#111"/><circle cx="43" cy="25" r="1.2" fill="#fff"/>
+    <!-- Smile -->
+    <path d="M30 33 Q36 38 42 33" stroke="#92400e" stroke-width="1.8" fill="none" stroke-linecap="round"/>
+    <!-- Antennae -->
+    <path d="M29 16 C26 9 20 5 17 2" stroke="#92400e" stroke-width="2" fill="none" stroke-linecap="round"/>
+    <circle cx="16" cy="1.5" r="3" fill="#fbbf24" stroke="#92400e" stroke-width="1.5"/>
+    <path d="M43 16 C46 9 52 5 55 2" stroke="#92400e" stroke-width="2" fill="none" stroke-linecap="round"/>
+    <circle cx="56" cy="1.5" r="3" fill="#fbbf24" stroke="#92400e" stroke-width="1.5"/>
+    <!-- Stinger -->
+    <polygon points="32,76 40,76 36,83" fill="#92400e"/>
+  </svg>
+</div>
+<div id="speech-bubble"><span id="speech-text"></span><span class="s-cursor"></span></div>
+<div id="skip-hint">klikni bilo gde za preskok</div>
+
+<!-- Login overlay -->
+<div id="login-overlay" class="login-overlay">
+  <div class="login-card">
+    <div class="login-title">🐝 <span>Pčela</span></div>
+    <div class="login-sub">Prijavite se da biste nastavili</div>
+    <div class="form-group" style="margin-bottom:.8rem">
+      <label class="form-lbl">Korisničko ime</label>
+      <input type="text" class="form-input" id="l-user" placeholder="korisnicko.ime"
+             autocomplete="username"
+             onkeydown="if(event.key==='Enter')document.getElementById('l-pass').focus()">
+    </div>
+    <div class="form-group" style="margin-bottom:.75rem">
+      <label class="form-lbl">Lozinka</label>
+      <input type="password" class="form-input" id="l-pass" placeholder="••••••••"
+             autocomplete="current-password"
+             onkeydown="if(event.key==='Enter')doLogin()">
+    </div>
+    <div id="l-err" class="login-err hidden"></div>
+    <button class="btn-primary" id="l-btn" onclick="doLogin()">Prijavi se</button>
+  </div>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<!-- About modal -->
+<div id="about-modal" class="about-overlay hidden" onclick="if(event.target===this)closeAbout()">
+  <div class="about-card">
+    <button class="about-close" onclick="closeAbout()">✕</button>
+    <div class="about-bee">🐝</div>
+    <h2 class="about-appname">Pčela</h2>
+    <div class="about-ver">v1.0.0</div>
+    <p class="about-tagline">Evidencija radnog vremena za TVI platformu<br>sa AI asistentom.</p>
+    <div class="about-sep"></div>
+    <p class="about-dev">Razvijena od strane <strong>GDSoft</strong>-a koristeći najmodernije dostupne tehnologije koje se u svetu trenutno koriste.</p>
+    <div class="about-tech">FastAPI · Gemini AI · Meteor DDP · Web Speech API · SockJS</div>
+    <div class="about-sep"></div>
+    <div class="about-copy">© 2026 Dalibor Gmitrović · Sva prava zadržana</div>
+  </div>
+</div>
+
+<!-- Header -->
+<div class="header">
+  <div class="bee-logo-wrap" onclick="switchTab('chat')" title="Otvori chat sa Pčelom">
+    <h1>🐝 <span>Pčela</span></h1>
+    <div class="bee-bubble">Četuj sa mnom!</div>
+  </div>
+  <div class="header-right">
+    <button class="mic-btn hidden" id="mic-btn" onclick="openVoice()" title="Glasovni unos">🎤</button>
+    <div class="user-menu-wrap" id="user-menu-wrap">
+      <button class="user-btn" onclick="toggleUserMenu()" id="user-btn">
+        <span class="user-avatar" id="user-avatar">?</span>
+        <span class="user-btn-name" id="user-name"></span>
+        <span class="user-chevron" id="user-chevron">▾</span>
+      </button>
+      <div class="user-menu hidden" id="user-menu">
+        <div class="user-menu-head">
+          <div class="um-avatar" id="um-avatar">?</div>
+          <div>
+            <div class="um-name" id="um-name">—</div>
+            <div class="um-uname" id="um-uname">—</div>
+          </div>
+        </div>
+        <div class="user-menu-sep"></div>
+        <button class="um-item" onclick="closeUserMenu(); switchTab('danas')"><span class="um-item-icon">📅</span> Danas</button>
+        <button class="um-item" onclick="closeUserMenu(); switchTab('istorija')"><span class="um-item-icon">📊</span> Istorija rada</button>
+        <button class="um-item" onclick="closeUserMenu(); switchTab('projekti')"><span class="um-item-icon">🔍</span> Pretraga projekata</button>
+        <button class="um-item hidden" id="um-admin-btn" onclick="closeUserMenu(); switchTab('admin')"><span class="um-item-icon">🛡</span> Admin panel</button>
+        <div class="user-menu-sep"></div>
+        <button class="um-item" onclick="closeUserMenu(); downloadApp()"><span class="um-item-icon">📱</span> Preuzmi Android app</button>
+        <div class="user-menu-sep"></div>
+        <button class="um-item" onclick="closeUserMenu(); openAbout()"><span class="um-item-icon">ℹ️</span> O aplikaciji</button>
+        <div class="user-menu-sep"></div>
+        <button class="um-item danger" onclick="doLogout()"><span class="um-item-icon">🚪</span> Odjavi se</button>
+        <div class="um-version" id="um-version"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Tabs -->
+<div class="tabs">
+  <button class="tab active" onclick="switchTab('danas')">Danas</button>
+  <button class="tab" onclick="switchTab('istorija')">Istorija</button>
+  <button class="tab" onclick="switchTab('projekti')">Projekti</button>
+  <button class="tab hidden" id="tab-btn-admin" onclick="switchTab('admin')">🛡 Admin</button>
+</div>
+
+<div class="main">
+
+  <!-- ═══════════ DANAS ═══════════ -->
+  <div id="tab-danas" class="section active">
+
+    <div class="card date-nav" style="margin-bottom:.75rem">
+      <button class="btn-nav" onclick="shiftDay(-1)">‹</button>
+      <div class="center">
+        <div class="date-label" id="dlabel">—</div>
+        <div class="date-sub"  id="dsub">—</div>
+      </div>
+      <button class="btn-nav" onclick="shiftDay(1)">›</button>
+    </div>
+
+    <div class="card summary hidden" id="summary">
+      <div class="summary-item">
+        <div class="summary-val" id="s-hours">—</div>
+        <div class="summary-lbl">Sati</div>
+      </div>
+      <div class="summary-item">
+        <div class="summary-val" id="s-lastend">—</div>
+        <div class="summary-lbl">Poslednji kraj</div>
+      </div>
+    </div>
+
+    <div id="records" class="records"></div>
+
+    <div id="km-day-section" class="km-day hidden"></div>
+
+    <div class="action-row">
+      <button class="btn-primary" id="btn-add" onclick="openForm(null)">+ Dodaj unos</button>
+      <button class="btn-car" id="btn-km" onclick="openKmForm()" title="Unos kilometraže">🚗</button>
+    </div>
+
+    <!-- Mileage / Kilometraža form -->
+    <div class="card km-card hidden" id="km-card">
+      <div class="km-title">🚗 Unos kilometraže</div>
+
+      <div class="form-group">
+        <label class="form-lbl">Automobil</label>
+        <select class="km-select" id="km-car" onchange="onKmCarChange()">
+          <option value="">— Izaberi automobil —</option>
+        </select>
+        <div class="km-info hidden" id="km-car-info"></div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-lbl">Projekat</label>
+        <div id="km-proj-quick" class="hidden" style="display:flex;flex-wrap:wrap;gap:.35rem;margin-bottom:.4rem"></div>
+        <div class="proj-wrap" id="km-proj-wrap">
+          <input type="text" class="form-input" id="km-proj-input"
+                 placeholder="Pretraži po nazivu…"
+                 autocomplete="off"
+                 oninput="onKmProjInput(this.value)">
+          <div class="proj-results hidden" id="km-proj-results"></div>
+        </div>
+        <div class="proj-selected hidden" id="km-proj-selected">
+          <span class="ps-name" id="km-proj-sel-name"></span>
+          <button class="proj-clear" onclick="clearKmProj()" title="Promeni">✕</button>
+        </div>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-lbl">Početna km</label>
+          <input type="number" class="form-input" id="km-start" placeholder="npr. 116743" oninput="calcKm()">
+        </div>
+        <div class="form-group">
+          <label class="form-lbl">Krajnja km</label>
+          <input type="number" class="form-input" id="km-end" placeholder="npr. 116843" oninput="calcKm()">
+        </div>
+      </div>
+
+      <div class="km-summary" id="km-summary"></div>
+
+      <div class="form-btns">
+        <button class="btn-secondary" onclick="closeKmForm()">Otkaži</button>
+        <button class="btn-primary" onclick="submitKm()" id="btn-km-save" disabled>Sačuvaj kilometražu</button>
+      </div>
+    </div>
+
+    <!-- Add / Edit form -->
+    <div class="card form-card hidden" id="form-card">
+      <div class="form-title" id="form-title">Novi unos</div>
+
+      <div class="form-group">
+        <label class="form-lbl">Projekat</label>
+        <div class="proj-wrap" id="proj-wrap">
+          <input type="text" class="form-input" id="proj-input"
+                 placeholder="Pretraži po nazivu…"
+                 autocomplete="off"
+                 oninput="onProjInput(this.value)">
+          <div class="proj-results hidden" id="proj-results"></div>
+        </div>
+        <div class="proj-selected hidden" id="proj-selected">
+          <span class="ps-name" id="proj-sel-name"></span>
+          <button class="proj-clear" onclick="clearProj()" title="Promeni">✕</button>
+        </div>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-lbl">Od (HH:MM)</label>
+          <input type="time" class="form-input" id="f-start">
+        </div>
+        <div class="form-group">
+          <label class="form-lbl">Do (HH:MM)</label>
+          <input type="time" class="form-input" id="f-end">
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label class="check-row">
+          <input type="checkbox" id="f-autoext" onchange="onAutoExt(this)">
+          Auto-dopuni od poslednjeg kraja
+        </label>
+      </div>
+
+      <div class="form-group">
+        <label class="form-lbl">Komentar</label>
+        <input type="text" class="form-input" id="f-comment" placeholder="Opciono…">
+      </div>
+
+      <div class="form-btns">
+        <button class="btn-secondary" onclick="closeForm()">Otkaži</button>
+        <button class="btn-primary"   onclick="submitForm()" id="btn-save">Sačuvaj</button>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ═══════════ ISTORIJA ═══════════ -->
+  <div id="tab-istorija" class="section">
+
+    <div class="card period-card" style="margin-bottom:.75rem">
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-lbl">Od</label>
+          <input type="text" class="form-input" id="h-od" placeholder="DD.MM.YYYY">
+        </div>
+        <div class="form-group">
+          <label class="form-lbl">Do</label>
+          <input type="text" class="form-input" id="h-do" placeholder="DD.MM.YYYY">
+        </div>
+      </div>
+      <div style="display:flex;gap:.5rem;margin-top:.6rem">
+        <button class="btn-primary" onclick="loadHistory()" style="flex:1">Prikaži</button>
+        <button class="btn-car" onclick="loadMileageHistory()" title="Kilometraža za period" style="width:auto;padding:.4rem .7rem">🚗</button>
+      </div>
+    </div>
+
+    <div id="hist-content"></div>
+
+  </div>
+
+  <!-- ═══════════ PROJEKTI ═══════════ -->
+  <div id="tab-projekti" class="section">
+
+    <div class="card search-card" style="margin-bottom:.75rem">
+      <div class="form-row">
+        <div class="form-group" style="flex:2">
+          <label class="form-lbl">Naziv</label>
+          <input type="text" class="form-input" id="p-search"
+                 placeholder="Min. 2 karaktera…"
+                 oninput="onProjTabInput(this.value)">
+        </div>
+        <div class="form-group" style="flex:1">
+          <label class="form-lbl">Domen</label>
+          <select class="form-input" id="p-domen"
+                  onchange="onProjTabInput(document.getElementById('p-search').value)">
+            <option value="">Svi</option>
+            <option value="6">Projektovanje</option>
+            <option value="8">Izvođenje</option>
+            <option value="9">Opšte</option>
+            <option value="10">Nadzor</option>
+            <option value="12">Servis</option>
+            <option value="13">Teh. kontrola</option>
+            <option value="14">BZR</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <div id="proj-tab-list">
+      <div class="empty">Ukucajte minimum 2 karaktera.</div>
+    </div>
+
+  </div>
+
+  <!-- ═══════════ Chat ═══════════ -->
+  <div id="tab-chat" class="section">
+    <div class="chat-outer">
+      <div class="chat-wrap">
+        <div class="chat-topbar">
+          <span class="chat-topbar-title">🐝 Pčela AI</span>
+          <div style="display:flex;gap:.35rem">
+            <button class="chat-top-btn" onclick="newChatConv()" title="Nova konverzacija">✏️</button>
+            <button class="chat-top-btn" onclick="toggleChatSidebar()" title="Istorija razgovora">🕐</button>
+          </div>
+        </div>
+        <div class="chat-msgs" id="chat-msgs"></div>
+        <div class="chat-chips" id="chat-chips"></div>
+        <div class="chat-input-bar">
+          <textarea class="chat-input" id="chat-input" placeholder="Pitaj Pčelu nešto…" rows="1"
+            onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();sendChat()}"
+            oninput="this.style.height='40px';this.style.height=Math.min(this.scrollHeight,120)+'px'"></textarea>
+          <button class="chat-send" id="chat-send-btn" onclick="sendChat()" title="Pošalji">➤</button>
+        </div>
+      </div>
+      <!-- History sidebar (slides in from right) -->
+      <div id="chat-sidebar" class="chat-sidebar hidden">
+        <div class="chat-sidebar-hdr">
+          <span>Istorija razgovora</span>
+          <button class="chat-top-btn" onclick="toggleChatSidebar()">✕</button>
+        </div>
+        <button class="chat-conv-new" onclick="newChatConv()">✏️ Nova konverzacija</button>
+        <div class="conv-list" id="chat-conv-list"></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="tab-admin" class="section">
+    <div class="card form-card" style="margin-bottom:.75rem">
+      <div class="form-title">📋 Server logovi</div>
+      <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:flex-end;margin-bottom:.75rem">
+        <div class="form-group" style="flex:1;min-width:120px;margin-bottom:0">
+          <label class="form-lbl">Korisnik</label>
+          <input class="form-input" id="log-filter-user" placeholder="svi" style="height:36px">
+        </div>
+        <div class="form-group" style="flex:1;min-width:120px;margin-bottom:0">
+          <label class="form-lbl">Akcija</label>
+          <select class="form-input" id="log-filter-action" style="height:36px">
+            <option value="">sve</option>
+            <option value="log">log (upis)</option>
+            <option value="parse-voice">parse-voice</option>
+            <option value="delete">delete</option>
+            <option value="delete-day">delete-day</option>
+            <option value="auth">auth</option>
+          </select>
+        </div>
+        <div class="form-group" style="flex:1;min-width:120px;margin-bottom:0">
+          <label class="form-lbl">Datum</label>
+          <input class="form-input" id="log-filter-datum" placeholder="DD.MM.YYYY" style="height:36px">
+        </div>
+        <button class="btn-primary" style="height:36px;padding:0 1rem" onclick="loadLogs()">Osveži</button>
+      </div>
+      <div id="log-summary" style="font-size:.75rem;color:#6b7280;margin-bottom:.5rem"></div>
+    </div>
+    <div id="log-entries"></div>
+
+    <div class="card form-card" style="margin-top:1rem">
+      <div class="form-title">🔄 Sinhronizacija projekata</div>
+      <div id="sync-last-info" style="font-size:.78rem;color:#6b7280;margin-bottom:.5rem">Učitavam…</div>
+      <p style="font-size:.8rem;color:#6b7280;margin-bottom:.75rem">Preuzima sve projekte sa TVI servera u lokalnu bazu. Traje 2-3 minuta. Svake noći automatski u 04:00.</p>
+      <button class="btn-primary" id="sync-btn" onclick="doSyncProjects()">Pokreni sinhronizaciju</button>
+      <div id="sync-progress" style="display:none;margin-top:1rem">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.35rem">
+          <span id="sync-status-text" style="font-size:.8rem;font-weight:600;color:#1e3a5f;flex:1"></span>
+          <span id="sync-pct" style="font-size:.82rem;color:#2563eb;font-weight:700;margin-left:.5rem">0%</span>
+        </div>
+        <div style="background:#e5e7eb;border-radius:99px;height:8px;overflow:hidden;margin-bottom:.75rem">
+          <div id="sync-bar" style="height:100%;background:linear-gradient(90deg,#2563eb,#60a5fa);border-radius:99px;width:0%;transition:width .4s ease"></div>
+        </div>
+        <div id="sync-domains" style="display:flex;flex-direction:column;gap:.3rem"></div>
+      </div>
+    </div>
+
+    <div style="margin-top:1.25rem">
+      <div class="card form-card" style="margin-bottom:.75rem">
+        <div class="form-title">🔧 MCP alati (produkcija)</div>
+        <div class="form-group">
+          <label class="form-lbl">Alat</label>
+          <select class="form-input" id="mcp-tool" onchange="onMcpToolChange()">
+            <option value="">— izaberi —</option>
+          </select>
+        </div>
+        <div id="mcp-args"></div>
+        <div class="form-btns" style="margin-top:.6rem">
+          <button class="btn-primary" id="mcp-run-btn" onclick="mcpInvoke()" disabled>Pokreni</button>
+        </div>
+      </div>
+      <div class="card" style="padding:1rem">
+        <div class="form-lbl" style="margin-bottom:.4rem">Rezultat</div>
+        <pre id="mcp-result" class="mcp-result">Izaberi alat i klikni Pokreni.</pre>
+      </div>
+    </div>
+  </div>
+
+</div><!-- .main -->
+
+<!-- Voice panel -->
+<div id="v-bg" class="v-bg hidden" onclick="closeVoice()"></div>
+<div id="v-panel" class="v-panel hidden">
+  <div class="v-handle"></div>
+  <div class="v-title">Glasovni unos</div>
+
+  <div class="v-mic-area">
+    <div id="v-ring" class="v-ring" onclick="_voiceStart()">
+      <span id="v-ring-icon" class="v-ring-icon">🎤</span>
+    </div>
+    <div id="v-state" class="v-state">Pritisnite za snimanje</div>
+  </div>
+
+  <div id="v-transcript-area" class="hidden" style="margin-bottom:.6rem">
+    <div class="v-section-lbl">Prepoznato:</div>
+    <div id="v-transcript" class="v-transcript"></div>
+  </div>
+
+  <div id="v-parsed-area" class="hidden">
+    <div class="v-section-lbl">Tumačenje:</div>
+    <div id="v-parsed" class="v-parsed"></div>
+  </div>
+
+
+  <div class="v-hint">
+    <b style="color:#6b7280">Upis:</b> obavezan <b>projekat</b>, poželjan komentar.<br>
+    „od 8 do 13 projekat opšte komentar mejlovi" · „do 17 projekat servis komentar popravka"<br>
+    <b style="color:#6b7280">Brisanje:</b> „obriši od 16 do 17" · <b>Status meseca:</b> „daj mi status za ovaj mesec"
+  </div>
+
+  <div id="v-btns" class="v-btns hidden">
+    <button class="btn-secondary" onclick="_voiceStart()">Ponovi</button>
+    <button class="btn-primary" id="v-confirm-btn" onclick="confirmVoice()">Upiši</button>
+  </div>
+</div>
+
+<script>
+// ────────────────────────────────────────────────────────────────────────────
+// Config
+// ────────────────────────────────────────────────────────────────────────────
+const API = window.location.origin.includes('127.0.0.1') || window.location.protocol === 'file:'
+  ? 'https://altered-lay-wheat-economics.trycloudflare.com'
+  : window.location.origin;
+
+// ────────────────────────────────────────────────────────────────────────────
+// Auth
+// ────────────────────────────────────────────────────────────────────────────
+let AUTH_HEADER = null;
+
+function showLogin(msg) {
+  const err = document.getElementById('l-err');
+  if (msg) { err.textContent = msg; err.classList.remove('hidden'); }
+  else      { err.classList.add('hidden'); }
+  document.getElementById('login-overlay').classList.remove('hidden');
+  setTimeout(() => document.getElementById('l-user').focus(), 50);
+}
+
+function hideLogin() {
+  document.getElementById('login-overlay').classList.add('hidden');
+}
+
+async function doLogin() {
+  const u = document.getElementById('l-user').value.trim();
+  const p = document.getElementById('l-pass').value;
+  if (!u || !p) return;
+  const btn = document.getElementById('l-btn');
+  btn.disabled = true; btn.textContent = '…';
+  const header = 'Basic ' + btoa(unescape(encodeURIComponent(u + ':' + p)));
+  try {
+    const r = await fetch(API + '/api/status', { headers: { 'Authorization': header } });
+    if (r.status === 401) throw new Error('401');
+    if (!r.ok) throw new Error(r.statusText);
+    AUTH_HEADER = header;
+    localStorage.setItem('tvi_auth', header);
+    hideLogin();
+    loadMe();
+    loadDanas();
+  } catch {
+    showLogin('Pogrešno korisničko ime ili lozinka.');
+  } finally {
+    btn.disabled = false; btn.textContent = 'Prijavi se';
+  }
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// TTS
+// ────────────────────────────────────────────────────────────────────────────
+let _ttsVoice = null;
+let _ttsReady = false;
+
+function _initTtsVoice() {
+  if (!window.speechSynthesis) return;
+  const voices = window.speechSynthesis.getVoices();
+  if (!voices.length) return;
+  const preferred = ['sr-RS', 'sr', 'sr-Latn', 'sr-Latn-RS', 'bs-BA', 'bs', 'hr-HR', 'hr'];
+  for (const lang of preferred) {
+    const v = voices.find(v => v.lang.toLowerCase().replace('_', '-') === lang.toLowerCase());
+    if (v) { _ttsVoice = v; break; }
+  }
+  if (!_ttsVoice) {
+    const fuzzy = voices.find(v => /^(sr|hr|bs)/i.test(v.lang));
+    if (fuzzy) _ttsVoice = fuzzy;
+  }
+  _ttsReady = true;
+}
+
+if (window.speechSynthesis) {
+  window.speechSynthesis.onvoiceschanged = _initTtsVoice;
+  _initTtsVoice();
+}
+
+function speak(text) {
+  // Native Android TTS (preko JavaScript interface-a u WebView)
+  if (window.AndroidTTS) {
+    try { window.AndroidTTS.speak(text); return; } catch {}
+  }
+  if (!window.speechSynthesis) return;
+  if (!_ttsReady) _initTtsVoice();
+  window.speechSynthesis.cancel();
+  const u = new SpeechSynthesisUtterance(text);
+  if (_ttsVoice) {
+    u.voice = _ttsVoice;
+    u.lang = _ttsVoice.lang;
+  } else {
+    u.lang = 'sr-RS';
+  }
+  u.rate = 0.95;
+  window.speechSynthesis.speak(u);
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Me / Username
+// ────────────────────────────────────────────────────────────────────────────
+async function loadMe() {
+  try {
+    const d = await api('/api/me');
+    const name = d.full_name || d.username;
+    const initials = name.split(' ').map(w => w[0]).filter(Boolean).slice(0,2).join('').toUpperCase();
+    document.getElementById('user-name').textContent = name;
+    document.getElementById('user-avatar').textContent = initials;
+    document.getElementById('um-avatar').textContent = initials;
+    document.getElementById('um-name').textContent = name;
+    document.getElementById('um-uname').textContent = d.username;
+    document.getElementById('mic-btn').classList.remove('hidden');
+    document.getElementById('um-version').textContent = 'Sesija: 1h · Pčela v1.0';
+    if (d.is_master) {
+      document.getElementById('tab-btn-admin').classList.remove('hidden');
+      document.getElementById('um-admin-btn').classList.remove('hidden');
+    }
+  } catch { /* tiho */ }
+}
+
+function _initials(name) {
+  return name.split(' ').map(w => w[0]).filter(Boolean).slice(0,2).join('').toUpperCase();
+}
+
+function toggleUserMenu() {
+  const m = document.getElementById('user-menu');
+  const ch = document.getElementById('user-chevron');
+  const hidden = m.classList.toggle('hidden');
+  ch.classList.toggle('open', !hidden);
+}
+
+function closeUserMenu() {
+  document.getElementById('user-menu').classList.add('hidden');
+  document.getElementById('user-chevron').classList.remove('open');
+}
+
+function openAbout() {
+  document.getElementById('about-modal').classList.remove('hidden');
+}
+function closeAbout() {
+  document.getElementById('about-modal').classList.add('hidden');
+}
+
+document.addEventListener('click', e => {
+  const wrap = document.getElementById('user-menu-wrap');
+  if (wrap && !wrap.contains(e.target)) closeUserMenu();
+});
+
+function doLogout() {
+  closeUserMenu();
+  localStorage.removeItem('tvi_auth');
+  location.reload();
+}
+
+function _renderSyncDomains(el, domainStatus) {
+  const icons = { running: '🔄', done: '✅', error: '❌' };
+  el.innerHTML = Object.entries(domainStatus).map(([d, s]) =>
+    `<div style="display:flex;align-items:center;gap:.5rem;font-size:.79rem;padding:.18rem 0">
+      <span>${icons[s.status] || '⏳'}</span>
+      <span style="flex:1;color:#374151">${d.replace(/_/g,' ')}</span>
+      <span style="color:#6b7280">${s.count > 0 ? s.count + ' proj.' : ''}</span>
+    </div>`
+  ).join('');
+}
+
+async function doSyncProjects() {
+  if (!confirm('Sinhronizacija projekata može trajati 2-3 minuta. Nastavi?')) return;
+
+  const btn    = document.getElementById('sync-btn');
+  const prog   = document.getElementById('sync-progress');
+  const bar    = document.getElementById('sync-bar');
+  const pctEl  = document.getElementById('sync-pct');
+  const statEl = document.getElementById('sync-status-text');
+  const domsEl = document.getElementById('sync-domains');
+
+  btn.disabled = true;
+  btn.textContent = '⏳ U toku…';
+  prog.style.display = 'block';
+  bar.style.width = '0%';
+  pctEl.textContent = '0%';
+  statEl.textContent = 'Povezivanje…';
+  domsEl.innerHTML = '';
+
+  const domainStatus = {};
+
+  try {
+    const resp = await fetch('/api/admin/sync/stream', {
+      headers: AUTH_HEADER ? { 'Authorization': AUTH_HEADER } : {}
+    });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+
+    const reader  = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      const parts = buf.split('\n\n');
+      buf = parts.pop();
+      for (const part of parts) {
+        const line = part.trim();
+        if (!line.startsWith('data:')) continue;
+        let msg;
+        try { msg = JSON.parse(line.slice(5).trim()); } catch { continue; }
+
+        if (msg.stage === 'domain_start') {
+          statEl.textContent = `Domen ${msg.domain_idx}/${msg.domain_total}: ${msg.domain.replace(/_/g,' ')}…`;
+          bar.style.width = msg.pct + '%';
+          pctEl.textContent = msg.pct + '%';
+          domainStatus[msg.domain] = { status: 'running', count: 0 };
+          _renderSyncDomains(domsEl, domainStatus);
+
+        } else if (msg.stage === 'page') {
+          statEl.textContent = `${msg.domain.replace(/_/g,' ')} — str. ${msg.page}, preuzeto ${msg.fetched}…`;
+          domainStatus[msg.domain] = { status: 'running', count: msg.fetched };
+          _renderSyncDomains(domsEl, domainStatus);
+
+        } else if (msg.stage === 'domain_done') {
+          bar.style.width = msg.pct + '%';
+          pctEl.textContent = msg.pct + '%';
+          domainStatus[msg.domain] = { status: 'done', count: msg.count };
+          _renderSyncDomains(domsEl, domainStatus);
+
+        } else if (msg.stage === 'domain_error') {
+          domainStatus[msg.domain] = { status: 'error', count: 0 };
+          _renderSyncDomains(domsEl, domainStatus);
+
+        } else if (msg.stage === 'finished') {
+          bar.style.width = '100%';
+          pctEl.textContent = '100%';
+          statEl.textContent = `✅ Završeno — ukupno ${msg.total} projekata`;
+          showToast(`Sinhronizovano ${msg.total} projekata ✓`);
+          loadSyncStatus();
+
+        } else if (msg.stage === 'error') {
+          statEl.textContent = `❌ Greška: ${msg.detail}`;
+          showToast('Greška: ' + msg.detail, true);
+        }
+      }
+    }
+  } catch (e) {
+    statEl.textContent = `❌ ${e.message}`;
+    showToast('Greška pri sinhronizaciji', true);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Pokreni sinhronizaciju';
+  }
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Voice command parser
+// ────────────────────────────────────────────────────────────────────────────
+const _numSr = {
+  'nula':'0','jedan':'1','jedna':'1','jedno':'1',
+  'dva':'2','dve':'2','tri':'3','četiri':'4',
+  'pet':'5','šest':'6','sedam':'7','osam':'8',
+  'devet':'9','deset':'10','jedanaest':'11','dvanaest':'12',
+  'trinaest':'13','četrnaest':'14','četrnaesta':'14',
+  'petnaest':'15','šesnaest':'16','sedamnaest':'17',
+  'osamnaest':'18','devetnaest':'19','dvadeset':'20',
+  'dvadeset jedan':'21','dvadeset dva':'22','dvadeset tri':'23',
+  'dvadeset pet':'25','trideset':'30','trideset pet':'35',
+  'četrdeset':'40','četrdeset pet':'45','pedeset':'50',
+};
+
+function _normVoice(text) {
+  let t = text.toLowerCase().trim();
+  // Zamijeni srpske brojeve riječima u cifre (duže fraze prvo)
+  Object.keys(_numSr).sort((a,b) => b.length-a.length)
+    .forEach(w => t = t.replace(new RegExp('\\b'+w+'\\b','g'), _numSr[w]));
+  return t.replace(/[,\.!?]/g,' ').replace(/\s+/g,' ').trim();
+}
+
+function _fmtT(h,m) { return String(h).padStart(2,'0')+':'+String(m).padStart(2,'0'); }
+
+function parseVoiceCommand(raw) {
+  // 1. Normalizuj brojeve
+  let t = _normVoice(raw);
+
+  // 2. Ukloni filere: "unesi/upiši/dodaj" i "danas/sutra"
+  t = t.replace(/\b(unesi|upisi|upiši|dodaj|upisati)\b/g, '');
+  t = t.replace(/\b(danas|sutra)\b/g, '');
+  // "17:00 h" ili "17 h" → ukloni "h" posle vremena (colloquial)
+  t = t.replace(/(\d{1,2}(?::\d{2})?)\s+h\b/g, '$1');
+  t = t.replace(/\s+/g, ' ').trim();
+
+  // 3. Izvuci komentar (sve posle ključne reči "komentar")
+  let comment = '';
+  const ci = t.search(/\bkomentar\b/);
+  if (ci !== -1) {
+    comment = t.slice(ci + 8).trim();
+    t = t.slice(0, ci).trim();
+  }
+
+  // 4. Izvuci projekat (sve posle ključne reči "projekat", do "komentar")
+  let project_query = '';
+  const pi = t.search(/\bprojekat\b/);
+  if (pi !== -1) {
+    project_query = t.slice(pi + 8).trim();
+    t = t.slice(0, pi).trim();
+  }
+
+  t = t.trim();
+
+  // 5. Parsiraj vreme iz preostalog teksta
+
+  // od H[:MM | ' ' MM] do H[:MM | ' ' MM]
+  let m = t.match(/od\s+(\d{1,2})(?::(\d{2})|\s+(\d{2})(?=\s|$))?\s+do\s+(\d{1,2})(?::(\d{2})|\s+(\d{2})(?=\s|$))?/);
+  if (m) {
+    const sh=+m[1], sm=+(m[2]||m[3]||0), eh=+m[4], em=+(m[5]||m[6]||0);
+    if (sh<=23&&sm<60&&eh<=23&&em<60)
+      return {auto:false, start:_fmtT(sh,sm), end:_fmtT(eh,em), project_query, comment, project:null};
+  }
+
+  // [dopuni] do H[:MM | ' ' MM]
+  m = t.match(/(?:dopuni\s+)?do\s+(\d{1,2})(?::(\d{2})|\s+(\d{2})(?=\s|$))?/);
+  if (m) {
+    const eh=+m[1], em=+(m[2]||m[3]||0);
+    if (eh<=23&&em<60)
+      return {auto:true, start:'', end:_fmtT(eh,em), project_query, comment, project:null};
+  }
+
+  return null;
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Voice panel
+// ────────────────────────────────────────────────────────────────────────────
+const _VoiceRec = window.SpeechRecognition || window.webkitSpeechRecognition;
+let _rec = null, _voiceCmd = null;
+
+function openVoice() {
+  _voiceCmd = null;
+  document.getElementById('v-bg').classList.remove('hidden');
+  const p = document.getElementById('v-panel');
+  p.classList.remove('hidden');
+  requestAnimationFrame(() => p.classList.add('open'));
+  _voiceResetUI();
+  _voiceStart();
+}
+
+function closeVoice() {
+  _voiceStop();
+  const p = document.getElementById('v-panel');
+  p.classList.remove('open');
+  setTimeout(() => {
+    p.classList.add('hidden');
+    document.getElementById('v-bg').classList.add('hidden');
+  }, 300);
+}
+
+function _voiceResetUI() {
+  _voiceCmd = null;
+  document.getElementById('v-transcript').textContent = '';
+  ['v-transcript-area','v-parsed-area','v-btns']
+    .forEach(id => document.getElementById(id).classList.add('hidden'));
+  const btn = document.getElementById('v-confirm-btn');
+  btn.disabled = false; btn.textContent = 'Upiši'; btn.style.background = '';
+  _voiceSetState('ready');
+}
+
+function _voiceSetState(state) {
+  const ring = document.getElementById('v-ring');
+  const icon = document.getElementById('v-ring-icon');
+  const txt  = document.getElementById('v-state');
+  ring.classList.remove('active');
+  if (state === 'listening') {
+    ring.classList.add('active');
+    icon.textContent = '🔴';
+    txt.textContent = 'Slušam…';
+  } else if (state === 'processing') {
+    icon.textContent = '⏳';
+    txt.textContent = 'Obrađujem…';
+  } else if (state === 'done') {
+    icon.textContent = '✅';
+    txt.textContent = 'Pritisnite za ponavljanje';
+  } else {
+    icon.textContent = '🎤';
+    txt.textContent = _VoiceRec ? 'Pritisnite za snimanje' : 'Pretraživač ne podržava glasovni unos.';
+  }
+}
+
+function _voiceStart() {
+  if (!_VoiceRec) { _voiceSetState('ready'); return; }
+  _voiceStop();
+  _voiceResetUI();
+  _rec = new _VoiceRec();
+  _rec.lang = 'sr-RS';
+  _rec.interimResults = true;
+  _rec.maxAlternatives = 1;
+
+  _rec.onstart = () => _voiceSetState('listening');
+
+  _rec.onresult = (e) => {
+    const txt = e.results[0][0].transcript;
+    const final = e.results[0].isFinal;
+    document.getElementById('v-transcript').textContent = txt;
+    document.getElementById('v-transcript-area').classList.remove('hidden');
+    if (final) {
+      _voiceSetState('processing');
+      _voiceProcess(txt).catch(() => _voiceSetState('ready'));
+    }
+  };
+
+  _rec.onerror = (e) => {
+    if (e.error === 'not-allowed')
+      document.getElementById('v-state').textContent = 'Mikrofon nije dozvoljen u pretraživaču.';
+    else if (e.error !== 'no-speech')
+      document.getElementById('v-state').textContent = 'Greška: ' + e.error;
+    else
+      _voiceSetState('ready');
+  };
+
+  _rec.onend = () => { if (!_voiceCmd) _voiceSetState('ready'); };
+
+  try { _rec.start(); } catch {}
+}
+
+function _voiceStop() {
+  if (_rec) { try { _rec.abort(); } catch {} _rec = null; }
+}
+
+function _toggleCandidates() {
+  const dd = document.getElementById('v-proj-dropdown');
+  const arrow = document.getElementById('v-proj-arrow');
+  if (!dd) return;
+  const open = !dd.classList.contains('hidden');
+  dd.classList.toggle('hidden', open);
+  if (arrow) arrow.classList.toggle('open', !open);
+}
+
+function _buildCandidatesDropdown(candidates) {
+  if (!candidates || candidates.length <= 1) return '';
+  const items = candidates.map((c, i) => {
+    const sel = i === 0 ? ' selected' : '';
+    return `<button class="v-candidate-btn${sel}" onclick="_selectCandidate(${i})">`
+      + `<b>#${esc(c.activity_number)}</b> ${esc(c.name)}`
+      + ` <span style="color:#9ca3af;font-size:.75rem">${esc(c.domain||'')}</span>`
+      + `</button>`;
+  }).join('');
+  return `<div id="v-proj-dropdown" class="v-candidates-dropdown hidden">${items}</div>`;
+}
+
+function _selectCandidate(i) {
+  const c = _voiceCmd.candidates[i];
+  if (!c) return;
+  _voiceCmd.activity_number = c.activity_number;
+  _voiceCmd.project_name    = c.name;
+  // Ažuriraj tekst projekta
+  const lbl = document.getElementById('v-parsed-project-lbl');
+  if (lbl) lbl.textContent = `#${c.activity_number} ${c.name}`;
+  // Označi odabrani
+  document.querySelectorAll('#v-proj-dropdown .v-candidate-btn')
+    .forEach((b, idx) => b.classList.toggle('selected', idx === i));
+  // Zatvori dropdown
+  _toggleCandidates();
+}
+
+async function _voiceProcess(text) {
+  let cmd = null;
+
+  // 1. Pokušaj AI parser (ako je konfigurisan na serveru)
+  try {
+    const ai = await api('/api/parse-voice', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({transcript: text}),
+    });
+    if (ai.end || ai.action === 'delete' || ai.action === 'delete_after' || ai.action === 'status_month') {
+      cmd = {
+        action:          ai.action || 'log',
+        auto:            ai.auto,
+        start:           ai.start || '',
+        end:             ai.end || '',
+        datum:           ai.datum || '',
+        activity_number: ai.activity_number || '',
+        project_name:    ai.project_name || '',
+        project_query:   ai.project_query || '',
+        comment:         ai.comment || '',
+        candidates:      ai.candidates || [],
+      };
+    }
+  } catch { /* AI nije konfigurisan ili greška — pad na regex */ }
+
+  // 2. Fallback: regex parser (samo za log komande)
+  if (!cmd) cmd = parseVoiceCommand(text);
+
+  if (!cmd) {
+    document.getElementById('v-state').textContent =
+      'Nisam prepoznao komandu. Npr: „od 8 do 13 projekat resnik komentar rad" ili „daj mi status za ovaj mesec"';
+    _voiceSetState('ready');
+    return;
+  }
+
+  // ── STATUS MESECA (glasovna povratna informacija) ───────────────────────────
+  if (cmd.action === 'status_month') {
+    _voiceCmd = cmd;
+    document.getElementById('v-parsed').innerHTML = '<span class="spin"></span> Proveravam status za mesec…';
+    document.getElementById('v-parsed-area').classList.remove('hidden');
+    document.getElementById('v-btns').classList.add('hidden');
+    _voiceSetState('done');
+    api('/api/mcp/invoke', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ tool: 'tvi_status_month', arguments: {} }),
+    }).then(d => {
+      const msg = d.error ? ('Greška: ' + d.error) : (d.result || '').toString();
+      document.getElementById('v-parsed').textContent = msg;
+      if (!d.error) speak(msg);
+    }).catch(e => {
+      document.getElementById('v-parsed').textContent = 'Greška: ' + (e.message || 'Zahtev nije uspeo.');
+    });
+    return;
+  }
+
+  // ── DELETE jedan unos (od–do) ───────────────────────────────────────────────
+  if (cmd.action === 'delete') {
+    _voiceCmd = cmd;
+    const rec = S.records.find(r => r.start === cmd.start && r.end === cmd.end);
+    let desc = `<b style="color:#ef4444">Obriši unos</b> ${cmd.start} → ${cmd.end}`;
+    if (rec) {
+      if (rec.project) desc += `<br><b>Projekat:</b> ${esc(rec.project)}`;
+      if (rec.comment) desc += `<br><b>Komentar:</b> ${esc(rec.comment)}`;
+      desc += `<br><span style="color:#6b7280">${hToHM(rec.hours)}</span>`;
+    } else {
+      desc += `<br><span style="color:#f59e0b">Zapis nije vidljiv u listi — tražiću ID pri potvrdi</span>`;
+    }
+    document.getElementById('v-parsed').innerHTML = desc;
+    document.getElementById('v-parsed-area').classList.remove('hidden');
+    const confirmBtn = document.getElementById('v-confirm-btn');
+    confirmBtn.disabled = false;
+    confirmBtn.textContent = 'Obriši';
+    confirmBtn.style.background = '#ef4444';
+    document.getElementById('v-btns').classList.remove('hidden');
+    _voiceSetState('done');
+    return;
+  }
+
+  // ── DELETE SVE posle vremena za dan ─────────────────────────────────────────
+  if (cmd.action === 'delete_after') {
+    _voiceCmd = cmd;
+    const datumLabel = cmd.datum || S.datum || 'danas';
+    const desc = `<b style="color:#ef4444">Obriši sve unose posle ${cmd.start}</b><br>za dan <b>${esc(datumLabel)}</b>`;
+    document.getElementById('v-parsed').innerHTML = desc;
+    document.getElementById('v-parsed-area').classList.remove('hidden');
+    const confirmBtn = document.getElementById('v-confirm-btn');
+    confirmBtn.disabled = false;
+    confirmBtn.textContent = 'Obriši sve';
+    confirmBtn.style.background = '#ef4444';
+    document.getElementById('v-btns').classList.remove('hidden');
+    _voiceSetState('done');
+    return;
+  }
+
+  // ── LOG komanda (projekat obavezan, komentar poželjan) ─────────────────────
+  _voiceCmd = cmd;
+
+  const nemaProjekat = !cmd.activity_number && !cmd.project_query && (!cmd.candidates || cmd.candidates.length === 0);
+  const viseKandidata = cmd.candidates && cmd.candidates.length > 1;
+
+  let desc = cmd.auto
+    ? `<b>Dopuni do</b> ${cmd.end}`
+    : `<b>Od</b> ${cmd.start} &nbsp;→&nbsp; <b>${cmd.end}</b>`;
+
+  if (nemaProjekat) {
+    desc += `<br><span style="color:#ef4444"><b>Obavezan projekat.</b> Npr. „od ${cmd.start} do ${cmd.end} projekat resnik elektro komentar rad"</span>`;
+  } else if (cmd.activity_number) {
+    if (viseKandidata) {
+      desc += `<br><b>Projekat:</b> <span class="v-proj-toggle" onclick="_toggleCandidates()">`
+            + `<span id="v-parsed-project-lbl">#${esc(cmd.activity_number)} ${esc(cmd.project_name)}</span>`
+            + `<span id="v-proj-arrow" class="v-proj-arrow">▼</span>`
+            + `</span>`;
+      desc += _buildCandidatesDropdown(cmd.candidates);
+    } else {
+      desc += `<br><b>Projekat:</b> #${esc(cmd.activity_number)} ${esc(cmd.project_name)}`;
+    }
+  } else if (cmd.project_query) {
+    desc += `<br><b>Projekat:</b> <span style="color:#ef4444">nije prepoznat: „${esc(cmd.project_query)}"</span>`;
+  }
+
+  if (cmd.comment) desc += `<br><b>Komentar:</b> ${esc(cmd.comment)}`;
+  else if (!nemaProjekat) desc += `<br><span style="color:#9ca3af">Komentar poželjan</span>`;
+
+  document.getElementById('v-parsed').innerHTML = desc;
+  document.getElementById('v-parsed-area').classList.remove('hidden');
+
+  const confirmBtn = document.getElementById('v-confirm-btn');
+  confirmBtn.disabled = nemaProjekat;
+  confirmBtn.textContent = 'Upiši';
+  confirmBtn.style.background = '';
+  document.getElementById('v-btns').classList.remove('hidden');
+  _voiceSetState('done');
+}
+
+async function confirmVoice() {
+  if (!_voiceCmd) return;
+  const cmd = _voiceCmd;
+  const btn = document.getElementById('v-confirm-btn');
+  btn.disabled = true; btn.textContent = '…';
+
+  try {
+    if (cmd.action === 'delete_after') {
+      // ── Brisanje svih unosa posle X za dan (MCP tvi_delete_after) ──────────
+      const datum = cmd.datum || S.datum;
+      const delRes = await api('/api/mcp/invoke', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({
+          tool: 'tvi_delete_after',
+          arguments: { start_time: cmd.start, datum: datum || '' },
+        }),
+      });
+      if (delRes.error) throw new Error(delRes.error);
+      closeVoice();
+      const msg = (delRes.result || '').toString();
+      const numMatch = msg.match(/Obrisano (\d+) zapisa/);
+      const n = numMatch ? numMatch[1] : '';
+      toast(n ? `Obrisano ${n} zapisa posle ${cmd.start}` : 'Obrisano.', 'ok');
+      speak(n ? `Obrisano ${n} zapisa.` : 'Obrisano.');
+      loadDanas();
+    } else if (cmd.action === 'delete') {
+      // ── Brisanje jednog zapisa preko MCP ───────────────────────────────────
+      let recId = S.recordIds?.[cmd.start];
+      if (!recId) {
+        btn.textContent = 'Tražim ID…';
+        const d = await api(`/api/day-with-ids?datum=${S.datum}`);
+        S.recordIds = {};
+        (d.records||[]).forEach(r => { if (r.id) S.recordIds[r.start] = r.id; });
+        recId = S.recordIds[cmd.start];
+      }
+      if (!recId) throw new Error(`Nije pronađen zapis za ${cmd.start}–${cmd.end}.`);
+      const delRes = await api('/api/mcp/invoke', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ tool: 'tvi_delete', arguments: { record_id: recId } }),
+      });
+      if (delRes.error) throw new Error(delRes.error);
+      closeVoice();
+      toast(`Obrisan unos ${cmd.start}–${cmd.end}`, 'ok');
+      speak(`Obrisan unos od ${cmd.start} do ${cmd.end}.`);
+      loadDanas();
+    } else {
+      // ── Upis preko MCP (tvi_log) ──────────────────────────────────────────
+      const args = {
+        end_time:       cmd.end,
+        start_time:     cmd.auto ? '' : (cmd.start || ''),
+        comment:        cmd.comment || '',
+        project_number: cmd.activity_number || '',
+        datum:          S.datum,
+      };
+      const res = await api('/api/mcp/invoke', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ tool: 'tvi_log', arguments: args }),
+      });
+      if (res.error) throw new Error(res.error);
+      closeVoice();
+      const msg = (res.result || '').toString();
+      const hoursMatch = msg.match(/Sati:\s*([\d.,]+)h/);
+      const timeMatch = msg.match(/Vreme:\s*(\d{1,2}:\d{2})\s*-\s*(\d{1,2}:\d{2})/);
+      const hours = hoursMatch ? hoursMatch[1].replace(',', '.') : '';
+      const startEnd = timeMatch ? `${timeMatch[1]}–${timeMatch[2]}` : `${cmd.start}–${cmd.end}`;
+      toast(hours ? `Upisano ${startEnd}  (${hours}h)` : 'Upisano.', 'ok');
+      speak(hours ? `Upisano. ${hours} sati.` : 'Upisano.');
+      loadDanas();
+    }
+  } catch(e) {
+    toast(e.message, 'err');
+    speak('Greška.');
+    btn.disabled = false;
+    btn.textContent = cmd.action === 'delete_after' ? 'Obriši sve' : (cmd.action === 'delete' ? 'Obriši' : 'Upiši');
+    btn.style.background = (cmd.action === 'delete' || cmd.action === 'delete_after') ? '#ef4444' : '';
+  }
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// State
+// ────────────────────────────────────────────────────────────────────────────
+const S = {
+  datum:       todayStr(),
+  records:     [],
+  recordIds:   null,    // {start_time_str → record_id}
+  _idsPromise: null,    // in-flight fetch za day-with-ids (reuse ako jos traje)
+  editing:     null,   // {id, idx} when editing
+  selProj:     null,   // selected project object
+  projResults: [],     // cache for dropdown
+  kmProjResults: [],   // cache for km project dropdown
+};
+
+// ────────────────────────────────────────────────────────────────────────────
+// Helpers
+// ────────────────────────────────────────────────────────────────────────────
+function todayStr() {
+  const d = new Date();
+  return pad(d.getDate()) + '.' + pad(d.getMonth()+1) + '.' + d.getFullYear();
+}
+function pad(n) { return String(n).padStart(2,'0'); }
+
+function parseDMY(s) {
+  const [d,m,y] = s.split('.').map(Number);
+  return new Date(y, m-1, d);
+}
+function formatDMY(s) {
+  const d = parseDMY(s);
+  const days   = ['Ned','Pon','Uto','Sre','Čet','Pet','Sub'];
+  const months = ['januar','februar','mart','april','maj','jun',
+                  'jul','avgust','septembar','oktobar','novembar','decembar'];
+  return { label: `${pad(d.getDate())}. ${months[d.getMonth()]} ${d.getFullYear()}.`,
+           day: days[d.getDay()] };
+}
+function addDays(s, n) {
+  const d = parseDMY(s);
+  d.setDate(d.getDate()+n);
+  return pad(d.getDate())+'.'+pad(d.getMonth()+1)+'.'+d.getFullYear();
+}
+function firstOfMonth() {
+  const d = new Date();
+  return '01.'+pad(d.getMonth()+1)+'.'+d.getFullYear();
+}
+function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function hToHM(h) { const m = Math.round(h * 60); return `${Math.floor(m/60)}:${String(m%60).padStart(2,'0')}`; }
+
+function workdaysInRange(od, doo) {
+  const days = [];
+  const end = parseDMY(doo);
+  let cur = parseDMY(od);
+  while (cur <= end) {
+    const wd = cur.getDay();
+    if (wd !== 0 && wd !== 6) // skip Sun(0) i Sat(6)
+      days.push(pad(cur.getDate())+'.'+pad(cur.getMonth()+1)+'.'+cur.getFullYear());
+    cur.setDate(cur.getDate()+1);
+  }
+  return days;
+}
+
+const DOMAIN = {
+  'OPSTE_I_NERADNO':'Opšte','IZVODJENJE':'Izvođ.','Projektovanje':'Proj.',
+  'NADZOR':'Nadzor','SERVIS':'Servis','TEHNICKA_KONTROLA':'Teh.K.','BZR_I_PPZ':'BZR',
+};
+function fmtDom(d) { return DOMAIN[d] || d; }
+
+// ────────────────────────────────────────────────────────────────────────────
+// Toast
+// ────────────────────────────────────────────────────────────────────────────
+let _tt;
+function toast(msg, type='ok') {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = `toast show ${type}`;
+  clearTimeout(_tt);
+  _tt = setTimeout(() => el.classList.remove('show'), 3000);
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// API
+// ────────────────────────────────────────────────────────────────────────────
+async function api(path, opts={}, timeout=60000) {
+  const headers = { ...(opts.headers || {}) };
+  if (AUTH_HEADER) headers['Authorization'] = AUTH_HEADER;
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeout);
+  try {
+    const r = await fetch(API + path, { ...opts, headers, signal: ctrl.signal });
+    clearTimeout(timer);
+    if (r.status === 401) {
+      AUTH_HEADER = null;
+      localStorage.removeItem('tvi_auth');
+      showLogin('Sesija je istekla. Prijavite se ponovo.');
+      throw new Error('Niste prijavljeni.');
+    }
+    if (!r.ok) {
+      const e = await r.json().catch(() => ({detail: r.statusText}));
+      throw new Error(e.detail || r.statusText);
+    }
+    return r.json();
+  } catch(e) {
+    clearTimeout(timer);
+    if (e.name === 'AbortError') throw new Error('Zahtjev je predugo trajao. Pokušaj ponovo.');
+    throw e;
+  }
+}
+
+async function downloadApp() {
+  const headers = {};
+  if (AUTH_HEADER) headers['Authorization'] = AUTH_HEADER;
+  try {
+    const r = await fetch(API + '/api/download-app', { headers });
+    if (!r.ok) {
+      toast('APK nije dostupan. Izgradi aplikaciju i postavi Pcela.apk na server.', 'err');
+      return;
+    }
+    const blob = await r.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'Pcela.apk';
+    a.click();
+    URL.revokeObjectURL(url);
+    toast('Preuzimanje Pcela.apk pokrenuto.', 'ok');
+  } catch (e) {
+    toast(e.message || 'Greška pri preuzimanju.', 'err');
+  }
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Tabs
+// ────────────────────────────────────────────────────────────────────────────
+function switchTab(name) {
+  document.querySelectorAll('.tab').forEach(el => {
+    const t = el.getAttribute('onclick').match(/switchTab\('(\w+)'\)/)?.[1];
+    el.classList.toggle('active', t === name);
+  });
+  document.querySelectorAll('.section').forEach(el => el.classList.remove('active'));
+  document.getElementById('tab-'+name).classList.add('active');
+  if (name === 'istorija' && !document.getElementById('h-od').value) {
+    document.getElementById('h-od').value = firstOfMonth();
+    document.getElementById('h-do').value = todayStr();
+  }
+  if (name === 'admin') {
+    if (!window._mcpToolsLoaded) loadMcpTools();
+    loadLogs();
+    loadSyncStatus();
+  }
+  if (name === 'chat' && !window._chatInited) { window._chatInited = true; initChat(); }
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Danas
+// ────────────────────────────────────────────────────────────────────────────
+function shiftDay(n) { S.datum = addDays(S.datum, n); loadDanas(); }
+
+async function loadDanas() {
+  closeForm();
+  S.recordIds = null;
+  const {label, day} = formatDMY(S.datum);
+  document.getElementById('dlabel').textContent = label;
+  document.getElementById('dsub').textContent   = day;
+  document.getElementById('records').innerHTML  = '<div class="empty"><span class="spin"></span></div>';
+  document.getElementById('summary').classList.add('hidden');
+  document.getElementById('km-day-section').classList.add('hidden');
+
+  try {
+    const data = await api(`/api/status?datum=${S.datum}`);
+    S.records = data.records || [];
+    renderSummary(data);
+    renderRecords();
+
+    // Tiho učitaj IDs u pozadini — bez spinera, reuse u _ensureIds
+    if (S.records.length > 0) {
+      S._idsPromise = api(`/api/day-with-ids?datum=${S.datum}`)
+        .then(d => {
+          S.recordIds = {};
+          (d.records||[]).forEach(r => { if (r.id) S.recordIds[r.start] = r.id; });
+        })
+        .catch(() => {});
+    }
+  } catch(e) {
+    document.getElementById('records').innerHTML = `<div class="empty">Greška: ${esc(e.message)}</div>`;
+  }
+
+  // Učitaj kilometraže za dan (paralelno, ne blokira glavni prikaz)
+  loadDayMileage();
+}
+
+async function loadDayMileage() {
+  const sec = document.getElementById('km-day-section');
+  try {
+    const d = await api(`/api/mileage?datum=${S.datum}`);
+    const entries = d.entries || [];
+    if (!entries.length) {
+      sec.classList.add('hidden');
+      return;
+    }
+    const badge = entries.length > 1
+      ? `<span class="km-badge">${entries.length}</span>` : '';
+    const sumText = d.total_km + ' km · ' + d.total_din.toLocaleString() + ' din';
+
+    let html = `<div class="km-day-toggle" onclick="toggleKmDay()">
+      <span>🚗</span>
+      <span>Kilometraža</span>
+      ${badge}
+      <span style="color:#9ca3af;font-weight:400;font-size:.76rem;margin-left:auto">${sumText}</span>
+      <span class="km-arrow" id="km-day-arrow">▶</span>
+    </div>`;
+    html += '<div class="km-day-body" id="km-day-body">';
+    entries.forEach(e => {
+      const projShort = e.project_name
+        ? esc(e.project_name.length > 50 ? e.project_name.slice(0, 47) + '…' : e.project_name)
+        : '';
+      html += `<div class="km-day-entry">
+        <div class="km-e-car">${esc(e.car_name)}</div>
+        <div class="km-e-range">${e.start_km.toLocaleString()} → ${e.end_km.toLocaleString()} km &nbsp;·&nbsp; <b>${e.amount} km</b> &nbsp;·&nbsp; <b>${e.total.toLocaleString()} din</b></div>
+        ${projShort ? `<div class="km-e-proj">${projShort}</div>` : ''}
+      </div>`;
+    });
+    if (entries.length > 1) {
+      html += `<div class="km-day-total"><span>Ukupno: ${d.total_km} km</span><span>${d.total_din.toLocaleString()} din</span></div>`;
+    }
+    html += '</div>';
+    sec.innerHTML = html;
+    sec.classList.remove('hidden');
+  } catch {
+    sec.classList.add('hidden');
+  }
+}
+
+function toggleKmDay() {
+  const body = document.getElementById('km-day-body');
+  const arrow = document.getElementById('km-day-arrow');
+  if (!body) return;
+  body.classList.toggle('open');
+  arrow.classList.toggle('open');
+}
+
+function renderSummary(d) {
+  const hasSummary = d.total_hours > 0;
+  document.getElementById('summary').classList.toggle('hidden', !hasSummary);
+  document.getElementById('s-hours').textContent   = hToHM(d.total_hours);
+  document.getElementById('s-lastend').textContent = d.last_end || '—';
+}
+
+function renderRecords() {
+  const el = document.getElementById('records');
+  if (!S.records.length) {
+    el.innerHTML = '<div class="empty">Nema zapisa za ovaj dan.</div>';
+    return;
+  }
+  el.innerHTML = S.records.map((r,i) => `
+    <div class="rec" id="r${i}">
+      <div class="rec-header">
+        <div>
+          <div class="rec-time">${esc(r.start)} – ${esc(r.end)}</div>
+          <div class="rec-hours">${hToHM(r.hours)}</div>
+        </div>
+        <div class="rec-actions">
+          <button class="btn-ic edit" id="edit-btn-${i}" onclick="editRecord(${i})" title="Uredi">✎</button>
+          <button class="btn-ic del"  id="del-btn-${i}"  onclick="delRecord(${i})"  title="Obriši">🗑</button>
+        </div>
+      </div>
+      <div class="rec-project">${esc(r.project||'—')}</div>
+      ${r.comment ? `<div class="rec-comment"># ${esc(r.comment)}</div>` : ''}
+    </div>`
+  ).join('');
+}
+
+async function _ensureIds(btnEl) {
+  if (S.recordIds) return true;  // već učitano
+  if (btnEl) { btnEl.textContent = '…'; btnEl.disabled = true; }
+  try {
+    // Reuse background fetch ako je već u toku, inače pokreni novi
+    if (!S._idsPromise) {
+      S._idsPromise = api(`/api/day-with-ids?datum=${S.datum}`)
+        .then(d => {
+          S.recordIds = {};
+          (d.records||[]).forEach(r => { if (r.id) S.recordIds[r.start] = r.id; });
+        });
+    }
+    await S._idsPromise;
+    return true;
+  } catch(e) {
+    toast('Greška pri učitavanju ID-ova: ' + e.message, 'err');
+    return false;
+  } finally {
+    renderRecords();
+  }
+}
+
+async function delRecord(i) {
+  const r   = S.records[i];
+  const btn = document.getElementById(`del-btn-${i}`);
+  if (!await _ensureIds(btn)) return;
+  const id = S.recordIds?.[r.start];
+  if (!id) return toast('ID nije pronađen.','err');
+  if (!confirm(`Obrisati ${r.start}–${r.end}?`)) return;
+  try {
+    await api(`/api/record/${id}`, {method:'DELETE'});
+    toast('Obrisano.','ok');
+    speak('Obrisano.');
+    loadDanas();
+  } catch(e) { toast(e.message,'err'); }
+}
+
+async function editRecord(i) {
+  const r   = S.records[i];
+  const btn = document.getElementById(`edit-btn-${i}`);
+  if (!await _ensureIds(btn)) return;
+  const id = S.recordIds?.[r.start];
+  if (!id) return toast('ID nije pronađen.','err');
+  S.editing = {id, i};
+
+  document.getElementById('form-title').textContent = 'Uredi unos';
+  document.getElementById('f-start').value   = r.start;
+  document.getElementById('f-end').value     = r.end;
+  document.getElementById('f-comment').value = r.comment||'';
+  document.getElementById('f-autoext').checked        = false;
+  document.getElementById('f-start').disabled         = false;
+  clearProj();
+
+  // Pokušaj auto-pretragu projekta
+  if (r.project) {
+    const kw = r.project.split(' ').slice(-3).join(' ');
+    api(`/api/search?pojam=${encodeURIComponent(kw)}`).then(d => {
+      const match = d.projects?.find(p => p.name === r.project) || d.projects?.[0];
+      if (match) selectProj(match);
+    }).catch(()=>{});
+  }
+
+  openFormCard();
+  document.getElementById('form-card').scrollIntoView({behavior:'smooth', block:'nearest'});
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Form
+// ────────────────────────────────────────────────────────────────────────────
+function openForm() {
+  S.editing = null;
+  document.getElementById('form-title').textContent   = 'Novi unos';
+  document.getElementById('f-start').value            = '';
+  document.getElementById('f-end').value              = '';
+  document.getElementById('f-comment').value          = '';
+  document.getElementById('f-autoext').checked        = false;
+  document.getElementById('f-start').disabled         = false;
+  clearProj();
+  openFormCard();
+}
+function openFormCard() {
+  document.getElementById('form-card').classList.remove('hidden');
+  document.getElementById('km-card').classList.add('hidden');
+  document.querySelector('.action-row').classList.add('hidden');
+}
+function closeForm() {
+  document.getElementById('form-card').classList.add('hidden');
+  document.querySelector('.action-row').classList.remove('hidden');
+  S.editing = null;
+}
+function onAutoExt(cb) {
+  document.getElementById('f-start').disabled = cb.checked;
+  if (cb.checked) document.getElementById('f-start').value = '';
+}
+
+async function submitForm() {
+  const end    = document.getElementById('f-end').value.substring(0,5);
+  const start  = document.getElementById('f-start').value.substring(0,5);
+  const comment= document.getElementById('f-comment').value;
+  const auto   = document.getElementById('f-autoext').checked;
+
+  if (!end)               return toast('Unesite vreme kraja.','err');
+  if (!auto && !start)    return toast('Unesite vreme početka ili uključite auto-dopuni.','err');
+
+  const body = {
+    end_time:       end,
+    start_time:     auto ? '' : start,
+    comment,
+    project_number: S.selProj?.activity_number || '',
+    datum:          S.datum,
+  };
+
+  const btn = document.getElementById('btn-save');
+  btn.disabled = true;
+  btn.textContent = '…';
+  try {
+    if (S.editing) {
+      await api(`/api/record/${S.editing.id}`, {method:'DELETE'});
+    }
+    const res = await api('/api/log', {
+      method:  'POST',
+      headers: {'Content-Type':'application/json'},
+      body:    JSON.stringify(body),
+    });
+    const verb = S.editing ? 'Izmenjeno.' : 'Upisano.';
+    toast(verb, 'ok');
+    if (!S.editing && res?.hours) speak(`Upisano. ${hToHM(res.hours)}.`);
+    closeForm();
+    loadDanas();
+  } catch(e) {
+    toast(e.message,'err');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Sačuvaj';
+  }
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Project search (inside form)
+// ────────────────────────────────────────────────────────────────────────────
+let _pst;
+function onProjInput(v) {
+  clearTimeout(_pst);
+  const res = document.getElementById('proj-results');
+  if (v.length < 2) { res.classList.add('hidden'); return; }
+  _pst = setTimeout(() => {
+    api(`/api/search?pojam=${encodeURIComponent(v)}`).then(d => {
+      S.projResults = d.projects || [];
+      if (!S.projResults.length) {
+        res.innerHTML = '<div class="proj-item" style="color:#9ca3af">Nema rezultata.</div>';
+      } else {
+        res.innerHTML = S.projResults.slice(0,15).map((p,i) =>
+          `<div class="proj-item" onclick="selectProjIdx(${i})">
+             <span class="pi-num">#${esc(p.activity_number)}</span>
+             <span class="pi-name">${esc(p.name)}</span>
+             <span class="pi-dom">${esc(fmtDom(p.domain))}</span>
+           </div>`
+        ).join('');
+      }
+      res.classList.remove('hidden');
+    }).catch(()=>{});
+  }, 280);
+}
+
+function selectProjIdx(i) { selectProj(S.projResults[i]); }
+function selectProj(p) {
+  S.selProj = p;
+  document.getElementById('proj-wrap').classList.add('hidden');
+  document.getElementById('proj-sel-name').textContent = `#${p.activity_number} ${p.name}`;
+  document.getElementById('proj-selected').classList.remove('hidden');
+  document.getElementById('proj-results').classList.add('hidden');
+}
+function clearProj() {
+  S.selProj = null;
+  document.getElementById('proj-input').value = '';
+  document.getElementById('proj-results').classList.add('hidden');
+  document.getElementById('proj-wrap').classList.remove('hidden');
+  document.getElementById('proj-selected').classList.add('hidden');
+}
+
+// Zatvori dropdown klikom van
+document.addEventListener('click', e => {
+  if (!e.target.closest('#proj-wrap'))
+    document.getElementById('proj-results').classList.add('hidden');
+  if (!e.target.closest('#km-proj-wrap'))
+    document.getElementById('km-proj-results').classList.add('hidden');
+});
+
+// ────────────────────────────────────────────────────────────────────────────
+// Kilometraža / Materijalni troškovi
+// ────────────────────────────────────────────────────────────────────────────
+let _kmCars = [];
+let _kmSelProj = null;
+let _kmProjTimer;
+
+function _getKmStore() {
+  try { return JSON.parse(localStorage.getItem('tvi_km_cars') || '{}'); } catch { return {}; }
+}
+function _setKmStore(obj) { localStorage.setItem('tvi_km_cars', JSON.stringify(obj)); }
+
+let _kmMyCarId = null;
+let _kmDefaultProjects = [];
+
+async function openKmForm() {
+  document.getElementById('km-card').classList.remove('hidden');
+  document.getElementById('form-card').classList.add('hidden');
+  document.querySelector('.action-row').classList.add('hidden');
+
+  try {
+    const d = await api('/api/cars');
+    _kmCars = d.cars || [];
+    _kmMyCarId = d.my_car_id || null;
+    _kmDefaultProjects = d.km_projects || [];
+  } catch { _kmCars = []; _kmMyCarId = null; _kmDefaultProjects = []; }
+
+  const sel = document.getElementById('km-car');
+  sel.innerHTML = '<option value="">— Izaberi automobil —</option>' +
+    _kmCars.map(c => `<option value="${esc(c._id)}">${esc(c.name)} (${c.unitPrice} din/km)</option>`).join('');
+
+  // Auto-select korisnikov auto
+  if (_kmMyCarId) {
+    sel.value = _kmMyCarId;
+    onKmCarChange();
+  }
+
+  // Ponudi podrazumevane projekte za kilometražu
+  _kmSelProj = null;
+  const quickDiv = document.getElementById('km-proj-quick');
+  if (_kmDefaultProjects.length) {
+    quickDiv.innerHTML = _kmDefaultProjects.map((p, i) =>
+      `<button type="button" class="btn-secondary" style="font-size:.82rem;padding:.3rem .6rem"
+              onclick="selectKmQuickProj(${i})">#${esc(p.activity_number)} ${esc(p.name)}</button>`
+    ).join('');
+    quickDiv.classList.remove('hidden');
+    quickDiv.style.display = 'flex';
+    // Auto-select prvi projekat ("kuća posao")
+    selectKmQuickProj(0);
+  } else {
+    quickDiv.classList.add('hidden');
+    quickDiv.style.display = 'none';
+    document.getElementById('km-proj-wrap').classList.remove('hidden');
+    document.getElementById('km-proj-selected').classList.add('hidden');
+  }
+
+  document.getElementById('km-proj-input').value = '';
+  document.getElementById('km-start').value = '';
+  document.getElementById('km-end').value = '';
+  document.getElementById('km-summary').style.display = 'none';
+  document.getElementById('km-car-info').classList.add('hidden');
+  document.getElementById('btn-km-save').disabled = true;
+
+  // Ako je auto auto-izabran, ponovo pokreni onKmCarChange za startKm
+  if (_kmMyCarId) onKmCarChange();
+}
+
+function selectKmQuickProj(idx) {
+  const p = _kmDefaultProjects[idx];
+  if (!p) return;
+  selectKmProj(p);
+}
+
+function closeKmForm() {
+  document.getElementById('km-card').classList.add('hidden');
+  document.querySelector('.action-row').classList.remove('hidden');
+}
+
+function onKmCarChange() {
+  const carId = document.getElementById('km-car').value;
+  const info = document.getElementById('km-car-info');
+  const startInput = document.getElementById('km-start');
+  if (!carId) {
+    info.classList.add('hidden');
+    startInput.value = '';
+    calcKm();
+    return;
+  }
+  const store = _getKmStore();
+  const lastKm = store[carId];
+  if (lastKm) {
+    info.innerHTML = `Poslednja zabeležena km: <b>${lastKm}</b> — automatski upisana kao početna.`;
+    info.classList.remove('hidden');
+    startInput.value = lastKm;
+  } else {
+    info.innerHTML = `Prvo korišćenje ovog auta — unesi početnu kilometražu.`;
+    info.classList.remove('hidden');
+    startInput.value = '';
+  }
+  calcKm();
+}
+
+function calcKm() {
+  const s = parseInt(document.getElementById('km-start').value) || 0;
+  const e = parseInt(document.getElementById('km-end').value) || 0;
+  const carId = document.getElementById('km-car').value;
+  const car = _kmCars.find(c => c._id === carId);
+  const summary = document.getElementById('km-summary');
+  const btnSave = document.getElementById('btn-km-save');
+
+  if (s > 0 && e > s && car && _kmSelProj) {
+    const amount = e - s;
+    const total = (amount * car.unitPrice).toFixed(2);
+    summary.innerHTML = `Pređeno: <b>${amount} km</b> × ${car.unitPrice} din = <b>${total} din</b>`;
+    summary.style.display = 'block';
+    btnSave.disabled = false;
+  } else {
+    summary.style.display = 'none';
+    btnSave.disabled = true;
+  }
+}
+
+function onKmProjInput(v) {
+  clearTimeout(_kmProjTimer);
+  const res = document.getElementById('km-proj-results');
+  if (v.length < 2) { res.classList.add('hidden'); return; }
+  _kmProjTimer = setTimeout(() => {
+    api(`/api/search?pojam=${encodeURIComponent(v)}`).then(d => {
+      const list = d.projects || [];
+      S.kmProjResults = list;
+      if (!list.length) { res.innerHTML = '<div class="proj-item" style="color:#9ca3af">Nema rezultata</div>'; }
+      else {
+        res.innerHTML = list.slice(0, 15).map((p, i) =>
+          `<div class="proj-item" onclick="selectKmProjIdx(${i})">
+             <span class="pi-num">#${esc(p.activity_number)}</span>
+             <span class="pi-name">${esc(p.name)}</span>
+             <span class="pi-dom">${esc(fmtDom(p.domain))}</span>
+           </div>`
+        ).join('');
+      }
+      res.classList.remove('hidden');
+    }).catch(() => {});
+  }, 300);
+}
+function selectKmProjIdx(i) { selectKmProj(S.kmProjResults[i]); }
+function selectKmProj(p) {
+  _kmSelProj = p;
+  document.getElementById('km-proj-wrap').classList.add('hidden');
+  document.getElementById('km-proj-sel-name').textContent = `#${p.activity_number} ${p.name}`;
+  document.getElementById('km-proj-selected').classList.remove('hidden');
+  document.getElementById('km-proj-results').classList.add('hidden');
+  const quickDiv = document.getElementById('km-proj-quick');
+  quickDiv.classList.add('hidden');
+  quickDiv.style.display = 'none';
+  calcKm();
+}
+function clearKmProj() {
+  _kmSelProj = null;
+  document.getElementById('km-proj-input').value = '';
+  document.getElementById('km-proj-results').classList.add('hidden');
+  document.getElementById('km-proj-wrap').classList.remove('hidden');
+  document.getElementById('km-proj-selected').classList.add('hidden');
+  const quickDiv = document.getElementById('km-proj-quick');
+  if (_kmDefaultProjects.length) {
+    quickDiv.classList.remove('hidden');
+    quickDiv.style.display = 'flex';
+  }
+  calcKm();
+}
+
+async function submitKm() {
+  const carId = document.getElementById('km-car').value;
+  const startKm = parseInt(document.getElementById('km-start').value);
+  const endKm = parseInt(document.getElementById('km-end').value);
+  if (!carId || !startKm || !endKm || endKm <= startKm || !_kmSelProj) return;
+
+  const btn = document.getElementById('btn-km-save');
+  btn.disabled = true;
+  btn.textContent = 'Snimam…';
+
+  try {
+    const d = await api('/api/mileage', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        car_id: carId,
+        start_km: startKm,
+        end_km: endKm,
+        activities_id: _kmSelProj.activities_id,
+        requests_id: _kmSelProj.requests_id,
+        date: S.datum || '',
+      }),
+    });
+
+    if (d.ok) {
+      const store = _getKmStore();
+      store[carId] = endKm;
+      _setKmStore(store);
+
+      toast(`${d.car}: ${d.amount} km = ${d.total} din`, 'ok');
+      speak(`Upisano ${d.amount} kilometara, ukupno ${d.total} dinara.`);
+      closeKmForm();
+    } else {
+      toast(d.error || d.detail || 'Greška', 'err');
+    }
+  } catch (e) {
+    toast('Greška: ' + e.message, 'err');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Sačuvaj kilometražu';
+  }
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// MCP (produkcija)
+// ────────────────────────────────────────────────────────────────────────────
+let _mcpToolsMeta = [];
+
+async function loadMcpTools() {
+  const sel = document.getElementById('mcp-tool');
+  const resultEl = document.getElementById('mcp-result');
+  try {
+    const d = await api('/api/mcp/tools');
+    _mcpToolsMeta = d.tools || [];
+    sel.innerHTML = '<option value="">— izaberi —</option>' +
+      _mcpToolsMeta.map(t => `<option value="${esc(t.name)}">${esc(t.label)}</option>`).join('');
+    window._mcpToolsLoaded = true;
+    onMcpToolChange();
+    resultEl.textContent = 'Izaberi alat i klikni Pokreni.';
+  } catch (e) {
+    sel.innerHTML = '<option value="">— MCP nije dostupan —</option>';
+    resultEl.textContent = 'Greška: ' + (e.message || 'MCP alati nisu dostupni na serveru.');
+    window._mcpToolsLoaded = true;
+  }
+}
+
+function onMcpToolChange() {
+  const name = document.getElementById('mcp-tool').value;
+  const container = document.getElementById('mcp-args');
+  const btn = document.getElementById('mcp-run-btn');
+  if (!name) {
+    container.innerHTML = '';
+    btn.disabled = true;
+    return;
+  }
+  const tool = _mcpToolsMeta.find(t => t.name === name);
+  if (!tool || !tool.args || !tool.args.length) {
+    container.innerHTML = '';
+    btn.disabled = false;
+    return;
+  }
+  container.innerHTML = tool.args.map(a => `
+    <div class="form-group">
+      <label class="form-lbl">${esc(a.label)}${a.optional ? ' (opciono)' : ''}</label>
+      <input type="text" class="form-input" id="mcp-arg-${esc(a.key)}" placeholder="${a.optional ? 'prazno = podrazumevano' : ''}">
+    </div>
+  `).join('');
+  btn.disabled = false;
+}
+
+async function mcpInvoke() {
+  const name = document.getElementById('mcp-tool').value;
+  const resultEl = document.getElementById('mcp-result');
+  const btn = document.getElementById('mcp-run-btn');
+  if (!name) return;
+  const tool = _mcpToolsMeta.find(t => t.name === name);
+  const args = {};
+  if (tool && tool.args) {
+    tool.args.forEach(a => {
+      const el = document.getElementById('mcp-arg-' + a.key);
+      if (el) {
+        const v = el.value.trim();
+        if (v !== '' || !a.optional) args[a.key] = v;
+      }
+    });
+  }
+  resultEl.textContent = 'Pokrećem…';
+  btn.disabled = true;
+  try {
+    const d = await api('/api/mcp/invoke', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ tool: name, arguments: args }),
+          });
+    if (d.error) {
+      resultEl.textContent = 'Greška: ' + d.error + (d.result ? '\n\n' + d.result : '');
+    } else {
+      resultEl.textContent = d.result != null ? String(d.result) : 'OK';
+    }
+  } catch (e) {
+    resultEl.textContent = 'Greška: ' + (e.message || 'Zahtev nije uspeo.');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Istorija
+// ────────────────────────────────────────────────────────────────────────────
+async function loadHistory() {
+  const od  = document.getElementById('h-od').value;
+  const doo = document.getElementById('h-do').value;
+  const el  = document.getElementById('hist-content');
+  el.innerHTML = '<div class="empty"><span class="spin"></span> Učitavam…</div>';
+  try {
+    const d = await api(`/api/history?od=${od}&do=${doo}`);
+    if (!d.days?.length) {
+      el.innerHTML = '<div class="empty">Nema zapisa za izabrani period.</div>';
+      return;
+    }
+    // Nepokriveni radni dani (Pon–Pet) u periodu
+    const coveredDays = new Set(d.days.map(day => day.datum));
+    const missing = workdaysInRange(od, doo).filter(s => !coveredDays.has(s));
+
+    const missingHtml = missing.length
+      ? `<div class="missing-block">
+           <div class="missing-title">⚠ Nepokriveni radni dani (${missing.length})</div>
+           ${missing.map(s => {
+               const dt = parseDMY(s);
+               const dn = ['Ned','Pon','Uto','Sre','Čet','Pet','Sub'][dt.getDay()];
+               return `<span class="missing-day">${dn} ${s}</span>`;
+             }).join('')}
+         </div>`
+      : `<div class="all-ok">✓ Svi radni dani su pokriveni</div>`;
+
+    el.innerHTML = missingHtml
+      + d.days.map(day => `
+      <div class="day-block">
+        <div class="day-hdr">
+          <span class="dh-name">${esc(day.dan)} ${esc(day.datum)}</span>
+          <span class="dh-total">${hToHM(day.hours)}</span>
+        </div>
+        ${day.records.map(r => `
+          <div class="day-row">
+            <div>
+              <div class="dr-time">${esc(r.start)} – ${esc(r.end)}</div>
+              <div class="dr-project">${esc(r.project||'—')}</div>
+              ${r.comment ? `<div class="dr-comment"># ${esc(r.comment)}</div>` : ''}
+            </div>
+            <div class="dr-hours">${hToHM(r.hours)}</div>
+          </div>`).join('')}
+      </div>`).join('')
+    + `<div class="hist-total">
+         <div class="ht-big">${hToHM(d.total_hours)}</div>
+         <div class="ht-sub">${d.radnih_dana} radnih dana sa unosima &nbsp;·&nbsp; ${od} – ${doo}</div>
+       </div>`;
+  } catch(e) {
+    el.innerHTML = `<div class="empty">Greška: ${esc(e.message)}</div>`;
+  }
+}
+
+async function loadMileageHistory() {
+  const od  = document.getElementById('h-od').value;
+  const doo = document.getElementById('h-do').value;
+  const el  = document.getElementById('hist-content');
+  el.innerHTML = '<div class="empty"><span class="spin"></span> Učitavam kilometražu…</div>';
+  try {
+    const d = await api(`/api/mileage/history?od=${od}&do=${doo}`);
+    if (!d.days?.length) {
+      el.innerHTML = '<div class="empty">Nema kilometraže za izabrani period.</div>';
+      return;
+    }
+    el.innerHTML = d.days.map(day => `
+      <div class="km-hist-block">
+        <div class="km-hist-day-hdr">
+          <span>${esc(day.dan)} ${esc(day.datum)}</span>
+          <span>${day.total_km} km · ${day.total_din.toLocaleString()} din</span>
+        </div>
+        ${day.entries.map(e => {
+          const proj = e.project_name
+            ? esc(e.project_name.length > 45 ? e.project_name.slice(0, 42) + '…' : e.project_name)
+            : '';
+          return `<div class="km-hist-row">
+            <div>
+              <div class="khr-car">${esc(e.car_name)}</div>
+              <div class="khr-km">${e.start_km.toLocaleString()} → ${e.end_km.toLocaleString()} km · ${e.amount} km</div>
+              ${proj ? `<div style="color:#64748b;font-size:.75rem">${proj}</div>` : ''}
+            </div>
+            <div class="khr-total">${e.total.toLocaleString()} din</div>
+          </div>`;
+        }).join('')}
+      </div>`).join('')
+    + `<div class="km-hist-grand">
+         <div>
+           <div class="khg-big">${d.total_km.toLocaleString()} km</div>
+           <div class="khg-sub">${d.total_entries} unosa · ${d.days.length} dana</div>
+         </div>
+         <div>
+           <div class="khg-big">${d.total_din.toLocaleString()} din</div>
+           <div class="khg-sub">${od || d.od} – ${doo || d.do}</div>
+         </div>
+       </div>`;
+  } catch(e) {
+    el.innerHTML = `<div class="empty">Greška: ${esc(e.message)}</div>`;
+  }
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Projekti tab
+// ────────────────────────────────────────────────────────────────────────────
+let _ptst;
+function onProjTabInput(v) {
+  clearTimeout(_ptst);
+  const el  = document.getElementById('proj-tab-list');
+  const dom = document.getElementById('p-domen').value;
+  if (v.length < 2) {
+    el.innerHTML = '<div class="empty">Ukucajte minimum 2 karaktera.</div>';
+    return;
+  }
+  el.innerHTML = '<div class="empty"><span class="spin"></span></div>';
+  _ptst = setTimeout(async () => {
+    try {
+      const url = `/api/search?pojam=${encodeURIComponent(v)}${dom?'&domen='+dom:''}`;
+      const d = await api(url);
+      if (!d.projects?.length) {
+        el.innerHTML = `<div class="empty">Nema rezultata za „${esc(v)}".</div>`;
+        return;
+      }
+      el.innerHTML =
+        `<div style="font-size:.72rem;color:#9ca3af;text-align:right;margin-bottom:.4rem">${d.count} projekata</div>`
+        + d.projects.map(p => `
+          <div class="proj-list-item">
+            <span class="pli-num">#${esc(p.activity_number)}</span>
+            <span class="pli-name">${esc(p.name)}</span>
+            <span class="pli-dom">${esc(fmtDom(p.domain))}</span>
+          </div>`).join('');
+    } catch(e) {
+      el.innerHTML = `<div class="empty">Greška: ${esc(e.message)}</div>`;
+    }
+  }, 300);
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Chat — ćaskanje sa Pčelom
+// ────────────────────────────────────────────────────────────────────────────
+// Chat — konverzacije u localStorage
+// ────────────────────────────────────────────────────────────────────────────
+
+const _CONV_KEY  = 'tvi_chat_convs';
+const _CONV_CUR  = 'tvi_chat_cur';
+const _MAX_CONVS = 40;
+
+let _chatHistory = [];  // aktivna konverzacija (in-memory)
+
+function _getConvs()       { try { return JSON.parse(localStorage.getItem(_CONV_KEY) || '[]'); } catch { return []; } }
+function _saveConvs(c)     { localStorage.setItem(_CONV_KEY, JSON.stringify(c.slice(0, _MAX_CONVS))); }
+function _getCurId()       { return localStorage.getItem(_CONV_CUR) || null; }
+function _setCurId(id)     { localStorage.setItem(_CONV_CUR, id); }
+
+function _convTitle(msgs) {
+  const first = msgs.find(m => m.role === 'user');
+  return first ? first.content.slice(0, 52).trimEnd() + (first.content.length > 52 ? '…' : '') : 'Nova konverzacija';
+}
+
+function _convTs() {
+  const n = new Date();
+  return `${n.getDate().toString().padStart(2,'0')}.${(n.getMonth()+1).toString().padStart(2,'0')}.${n.getFullYear()} ${n.getHours().toString().padStart(2,'0')}:${n.getMinutes().toString().padStart(2,'0')}`;
+}
+
+function _saveCurConv() {
+  const id = _getCurId();
+  if (!id) return;
+  const convs = _getConvs();
+  const idx = convs.findIndex(c => c.id === id);
+  if (idx === -1) return;
+  convs[idx].messages = [..._chatHistory];
+  convs[idx].title = _convTitle(_chatHistory);
+  convs[idx].updated = _convTs();
+  _saveConvs(convs);
+  _renderChatSidebar();
+}
+
+function newChatConv() {
+  const id = Date.now().toString();
+  const convs = _getConvs();
+  convs.unshift({ id, title: 'Nova konverzacija', messages: [], created: _convTs(), updated: _convTs() });
+  _saveConvs(convs);
+  _setCurId(id);
+  _chatHistory.length = 0;
+  _showWelcome();
+  _renderChatSidebar();
+  // close sidebar
+  document.getElementById('chat-sidebar')?.classList.add('hidden');
+}
+
+function loadConv(id) {
+  const conv = _getConvs().find(c => c.id === id);
+  if (!conv) return;
+  _setCurId(id);
+  _chatHistory.length = 0;
+  _chatHistory.push(...(conv.messages || []));
+  if (_chatHistory.length === 0) {
+    _showWelcome();
+  } else {
+    _renderChat();
+    document.getElementById('chat-chips').innerHTML = '';
+  }
+  _renderChatSidebar();
+  document.getElementById('chat-sidebar')?.classList.add('hidden');
+}
+
+function deleteConv(id, ev) {
+  ev.stopPropagation();
+  let convs = _getConvs().filter(c => c.id !== id);
+  _saveConvs(convs);
+  if (_getCurId() === id) {
+    if (convs.length > 0) { _setCurId(convs[0].id); _chatHistory.length = 0; _chatHistory.push(...convs[0].messages); }
+    else { newChatConv(); return; }
+    if (_chatHistory.length === 0) _showWelcome(); else { _renderChat(); document.getElementById('chat-chips').innerHTML = ''; }
+  }
+  _renderChatSidebar();
+}
+
+function toggleChatSidebar() {
+  const sb = document.getElementById('chat-sidebar');
+  if (!sb) return;
+  sb.classList.toggle('hidden');
+  if (!sb.classList.contains('hidden')) _renderChatSidebar();
+}
+
+function _renderChatSidebar() {
+  const el = document.getElementById('chat-conv-list');
+  if (!el) return;
+  const convs = _getConvs();
+  const curId = _getCurId();
+  if (!convs.length) {
+    el.innerHTML = '<div style="padding:1rem;font-size:.78rem;color:#9ca3af;text-align:center">Nema sačuvanih razgovora</div>';
+    return;
+  }
+  el.innerHTML = convs.map(c => `
+    <div class="conv-item ${c.id === curId ? 'active' : ''}" onclick="loadConv('${c.id}')">
+      <div class="conv-title">${esc(c.title)}</div>
+      <div class="conv-meta">${esc(c.updated || c.created || '')}</div>
+      <button class="conv-del" onclick="deleteConv('${c.id}',event)" title="Obriši">✕</button>
+    </div>`).join('');
+}
+
+const _CHAT_CHIPS = [
+  { cat: '📊 Pregled', cls: '', chips: [
+    'Koliko sam radio danas?',
+    'Prikaži unose za ovaj mesec',
+    'Prikaži unose za jučer',
+    'Koji projekat sam najviše radio ovog meseca?',
+    'Koliko ukupno sati imam ovog meseca?',
+  ]},
+  { cat: '⏰ Upis', cls: 'chip-log', chips: [
+    'Dopuni za još 1h',
+    'Dopuni za još 2h, projekat , komentar ',
+    'Upiši od 08:00 do 16:00, projekat , komentar ',
+    'Upiši 8h danas',
+  ]},
+  { cat: '✏️ Izmena', cls: 'chip-edit', chips: [
+    'Promeni komentar na zadnjem unosu: ',
+    'Koji je ID zadnjeg unosa za danas?',
+  ]},
+  { cat: '🗑️ Brisanje', cls: 'chip-del', chips: [
+    'Obriši zadnji unos za danas',
+    'Obriši sve unose za danas',
+  ]},
+];
+
+function _fillChatInput(text) {
+  const inp = document.getElementById('chat-input');
+  inp.value = text;
+  inp.focus();
+  inp.selectionStart = inp.selectionEnd = text.length;
+  inp.style.height = 'auto';
+  inp.style.height = Math.min(inp.scrollHeight, 120) + 'px';
+}
+
+function _showWelcome() {
+  const msgs = document.getElementById('chat-msgs');
+  msgs.innerHTML = `
+    <div class="chat-msg bot">
+      <div class="chat-avatar">🐝</div>
+      <div class="chat-bubble">
+        Zdravo! Ja sam <b>Pčela</b> 🐝 — tvoj AI asistent za TVI evidenciju.<br><br>
+        Imam uvid u tvoje unose za ovaj mesec (po danima), projekte i sve o aplikaciji. Šta te zanima?
+      </div>
+    </div>`;
+  const chips = document.getElementById('chat-chips');
+  chips.innerHTML = _CHAT_CHIPS.map(group =>
+    `<div class="chip-group">
+      <span class="chip-cat">${group.cat}</span>
+      ${group.chips.map(s =>
+        `<button class="chat-chip ${group.cls}" onclick="_fillChatInput(${JSON.stringify(s)})">${s}</button>`
+      ).join('')}
+    </div>`
+  ).join('');
+  msgs.scrollTop = msgs.scrollHeight;
+}
+
+function initChat() {
+  // Učitaj poslednju aktivnu konverzaciju ili kreiraj novu
+  const convs = _getConvs();
+  let curId = _getCurId();
+  let conv = convs.find(c => c.id === curId);
+  if (!conv) {
+    if (convs.length > 0) { conv = convs[0]; curId = conv.id; _setCurId(curId); }
+    else { newChatConv(); return; }
+  }
+  _chatHistory.length = 0;
+  _chatHistory.push(...(conv.messages || []));
+  if (_chatHistory.length === 0) _showWelcome();
+  else { _renderChat(); document.getElementById('chat-chips').innerHTML = ''; }
+}
+
+function _mdToHtml(t) {
+  return t
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/\*\*(.+?)\*\*/g,'<b>$1</b>')
+    .replace(/\*(.+?)\*/g,'<i>$1</i>')
+    .replace(/`([^`]+)`/g,'<code>$1</code>')
+    .replace(/^#{1,3} (.+)$/gm,'<b style="display:block;margin:.4rem 0 .1rem">$1</b>')
+    .replace(/^[-•] (.+)$/gm,'&nbsp;• $1')
+    .replace(/\n\n/g,'<br><br>')
+    .replace(/\n/g,'<br>');
+}
+
+function _renderChat() {
+  const avatar = document.getElementById('user-avatar')?.textContent || '?';
+  const msgs = document.getElementById('chat-msgs');
+  msgs.innerHTML = _chatHistory.map(m => {
+    if (m.role === 'user') {
+      return `<div class="chat-msg user">
+        <div class="chat-avatar">${esc(avatar)}</div>
+        <div class="chat-bubble">${esc(m.content).replace(/\n/g,'<br>')}</div>
+      </div>`;
+    }
+    return `<div class="chat-msg bot">
+      <div class="chat-avatar">🐝</div>
+      <div class="chat-bubble">${_mdToHtml(m.content)}</div>
+    </div>`;
+  }).join('');
+  msgs.scrollTop = msgs.scrollHeight;
+}
+
+function _chatTyping(show) {
+  const existing = document.getElementById('chat-typing-el');
+  if (existing) existing.remove();
+  if (!show) return;
+  const el = document.createElement('div');
+  el.className = 'chat-msg bot'; el.id = 'chat-typing-el';
+  el.innerHTML = `<div class="chat-avatar">🐝</div><div class="chat-bubble">
+    <span class="chat-dot"></span><span class="chat-dot"></span><span class="chat-dot"></span>
+  </div>`;
+  document.getElementById('chat-msgs').appendChild(el);
+  document.getElementById('chat-msgs').scrollTop = 99999;
+}
+
+async function _sendChatMsg(text) {
+  if (!text.trim()) return;
+  document.getElementById('chat-chips').innerHTML = '';
+  _chatHistory.push({role: 'user', content: text});
+  _renderChat();
+  _chatTyping(true);
+  const btn = document.getElementById('chat-send-btn');
+  if (btn) btn.disabled = true;
+
+  try {
+    const d = await api('/api/chat', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({messages: _chatHistory}),
+    }, 65000);
+    _chatTyping(false);
+    _chatHistory.push({role: 'assistant', content: d.content});
+  } catch(e) {
+    _chatTyping(false);
+    _chatHistory.push({role: 'assistant', content: `Ups, desila se greška: _${e.message || e}_. Pokušaj ponovo.`});
+  }
+  _renderChat();
+  if (btn) btn.disabled = false;
+  _saveCurConv();  // sačuvaj u localStorage
+}
+
+function sendChat() {
+  const inp = document.getElementById('chat-input');
+  const text = inp.value.trim();
+  if (!text) return;
+  inp.value = '';
+  inp.style.height = '40px';
+  _sendChatMsg(text);
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Admin log viewer
+// ────────────────────────────────────────────────────────────────────────────
+const _ACTION_LABELS = {
+  'log': 'upis', 'parse-voice': 'glas', 'delete': 'brisanje',
+  'delete-day': 'briši dan', 'auth': 'auth'
+};
+
+function _logSummary(e) {
+  if (e.action === 'log')
+    return `${e.start||'?'}–${e.end||'?'} · ${e.project||''} ${e.comment ? '· '+e.comment : ''}`;
+  if (e.action === 'parse-voice')
+    return `"${(e.transcript||'').slice(0,60)}" → ${e.matched_num ? '#'+e.matched_num+' '+e.matched_name : (e.project_query||'?')}`;
+  if (e.action === 'delete')
+    return `ID: ${e.record_id||'?'}`;
+  if (e.action === 'delete-day')
+    return `${e.datum||'?'} · obrisano: ${e.deleted??'?'}`;
+  if (e.action === 'auth')
+    return e.detail || '';
+  return JSON.stringify(e).slice(0,80);
+}
+
+function _logDetails(e) {
+  const skip = new Set(['ts','user','ip','action','status']);
+  const rows = Object.entries(e).filter(([k]) => !skip.has(k)).map(([k,v]) => {
+    const val = Array.isArray(v) ? v.join(' | ') : (typeof v === 'object' ? JSON.stringify(v) : String(v??''));
+    return `<div class="log-k">${esc(k)}</div><div class="log-v">${esc(val)}</div>`;
+  });
+  return `<div class="log-kv">${rows.join('')}</div>`;
+}
+
+function _toggleLogEntry(el) {
+  el.closest('.log-entry').classList.toggle('open');
+}
+
+async function loadSyncStatus() {
+  const el = document.getElementById('sync-last-info');
+  if (!el) return;
+  try {
+    const d = await api('/api/admin/sync/status');
+    if (!d.last_sync) {
+      el.textContent = 'Baza nikad nije sinhronizovana.';
+      return;
+    }
+    const ls = d.last_sync;
+    const mode = ls.mode === 'auto' ? '🤖 automatski' : '👆 ručno';
+    el.innerHTML =
+      `Poslednja sinhronizacija: <strong>${ls.ts}</strong> — ${ls.total} projekata (${mode})` +
+      (d.next_auto_sync ? ` &nbsp;|&nbsp; Sledeća auto-sync: <strong>${d.next_auto_sync}</strong>` : '');
+  } catch {
+    el.textContent = '';
+  }
+}
+
+async function loadLogs() {
+  const user   = document.getElementById('log-filter-user').value.trim();
+  const action = document.getElementById('log-filter-action').value;
+  const datum  = document.getElementById('log-filter-datum').value.trim();
+  let url = `/api/admin/logs?n=300`;
+  if (user)   url += `&user=${encodeURIComponent(user)}`;
+  if (action) url += `&action=${encodeURIComponent(action)}`;
+  if (datum)  url += `&datum=${encodeURIComponent(datum)}`;
+
+  const container = document.getElementById('log-entries');
+  container.innerHTML = '<div class="empty">Učitavam logove…</div>';
+  try {
+    const d = await api(url);
+    document.getElementById('log-summary').textContent =
+      `Prikazano: ${d.entries.length} unosa (ukupno u fajlu: ${d.total})`;
+    if (!d.entries.length) {
+      container.innerHTML = '<div class="empty">Nema log unosa za zadate filtere.</div>';
+      return;
+    }
+    container.innerHTML = d.entries.map((e, i) => {
+      const isErr = e.status && e.status !== 'ok';
+      const badgeCls = `log-badge ${e.action}${e.action==='auth'&&isErr?' err':''}`;
+      const stCls = `log-status ${isErr?'err':'ok'}`;
+      return `
+      <div class="log-entry" id="le${i}">
+        <div class="log-entry-head" onclick="_toggleLogEntry(this)">
+          <span class="${badgeCls}">${_ACTION_LABELS[e.action]||e.action}</span>
+          <span class="log-ts">${e.ts}</span>
+          <span class="log-user">${esc(e.user)}</span>
+          <span class="log-summary">${esc(_logSummary(e))}</span>
+          ${isErr ? `<span class="${stCls}">${esc(e.status)}</span>` : ''}
+        </div>
+        <div class="log-entry-body" style="display:none" id="leb${i}">
+          <div style="font-size:.7rem;color:#9ca3af;margin-bottom:.4rem">IP: ${esc(e.ip||'?')}</div>
+          ${_logDetails(e)}
+        </div>
+      </div>`;
+    }).join('');
+
+    // toggle open/close body
+    document.querySelectorAll('.log-entry-head').forEach((h, i) => {
+      h.addEventListener('click', () => {
+        const body = document.getElementById('leb'+i);
+        if (body) body.style.display = body.style.display === 'none' ? 'block' : 'none';
+      });
+    });
+  } catch(e) {
+    container.innerHTML = `<div class="empty" style="color:#dc2626">Greška: ${esc(String(e))}</div>`;
+  }
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Startup animation
+// ────────────────────────────────────────────────────────────────────────────
+(function() {
+  const overlay  = document.getElementById('startup-overlay');
+  const beeEl    = document.getElementById('bee-el');
+  const bubble   = document.getElementById('speech-bubble');
+  const speechTx = document.getElementById('speech-text');
+  const glow     = document.getElementById('startup-glow');
+  const skipHint = document.getElementById('skip-hint');
+  let done = false;
+
+  // ── Hex grid canvas ────────────────────────────────────────────────────────
+  function drawHex() {
+    const canvas = document.getElementById('hex-canvas');
+    const ctx = canvas.getContext('2d');
+    canvas.width  = window.innerWidth;
+    canvas.height = window.innerHeight;
+    const R = 34, W = R * Math.sqrt(3), H = R * 2;
+    const cols = Math.ceil(canvas.width  / W) + 2;
+    const rows = Math.ceil(canvas.height / (H * .75)) + 2;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        const cx = c * W + (r % 2) * W * .5 - W;
+        const cy = r * H * .75 - H;
+        const alpha = (.04 + Math.random() * .08).toFixed(3);
+        ctx.strokeStyle = `rgba(59,130,246,${alpha})`;
+        ctx.lineWidth = .8;
+        ctx.beginPath();
+        for (let i = 0; i < 6; i++) {
+          const a = Math.PI / 3 * i - Math.PI / 6;
+          const px = cx + R * Math.cos(a), py = cy + R * Math.sin(a);
+          i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
+        }
+        ctx.closePath(); ctx.stroke();
+      }
+    }
+    // Animate random hex cells glowing
+    animateHex(canvas, ctx, R, W, H, cols, rows);
+  }
+
+  function animateHex(canvas, ctx, R, W, H, cols, rows) {
+    let t = 0;
+    const hexAnim = () => {
+      if (done) return;
+      t++;
+      if (t % 8 === 0) {
+        const r = Math.floor(Math.random() * rows);
+        const c = Math.floor(Math.random() * cols);
+        const cx = c * W + (r % 2) * W * .5 - W;
+        const cy = r * H * .75 - H;
+        ctx.strokeStyle = `rgba(251,191,36,${(.2 + Math.random() * .3).toFixed(2)})`;
+        ctx.lineWidth = 1.2;
+        ctx.beginPath();
+        for (let i = 0; i < 6; i++) {
+          const a = Math.PI / 3 * i - Math.PI / 6;
+          ctx.lineTo(cx + R * Math.cos(a), cy + R * Math.sin(a));
+        }
+        ctx.closePath(); ctx.stroke();
+        setTimeout(() => {
+          if (done) return;
+          ctx.strokeStyle = `rgba(59,130,246,0.06)`;
+          ctx.lineWidth = .8;
+          ctx.beginPath();
+          for (let i = 0; i < 6; i++) {
+            const a = Math.PI / 3 * i - Math.PI / 6;
+            ctx.lineTo(cx + R * Math.cos(a), cy + R * Math.sin(a));
+          }
+          ctx.closePath(); ctx.stroke();
+        }, 400);
+      }
+      requestAnimationFrame(hexAnim);
+    };
+    requestAnimationFrame(hexAnim);
+  }
+
+  // ── Buzzing sound ──────────────────────────────────────────────────────────
+  function buzz(duration) {
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      const lfo = ctx.createOscillator();
+      const lfoG = ctx.createGain();
+      lfo.frequency.value = 85; lfoG.gain.value = 55;
+      lfo.connect(lfoG); lfoG.connect(osc.frequency);
+      osc.type = 'sawtooth'; osc.frequency.value = 240;
+      osc.connect(gain); gain.connect(ctx.destination);
+      gain.gain.setValueAtTime(0, ctx.currentTime);
+      gain.gain.linearRampToValueAtTime(.045, ctx.currentTime + .12);
+      gain.gain.setValueAtTime(.045, ctx.currentTime + duration - .35);
+      gain.gain.linearRampToValueAtTime(0, ctx.currentTime + duration);
+      lfo.start(); osc.start();
+      lfo.stop(ctx.currentTime + duration);
+      osc.stop(ctx.currentTime + duration);
+    } catch(e) {}
+  }
+
+  // ── Bee flight path (JS-driven for smooth bezier) ─────────────────────────
+  const W = window.innerWidth, H = window.innerHeight;
+  const cx = W / 2 - 36, cy = H / 2 - 42; // center landing spot
+
+  // Waypoints: off-screen start → wander → center
+  const waypoints = [
+    { x: -90,          y: -90,          rot:  35, sx:  1 },
+    { x: W * .35,      y: H * .08,      rot: -20, sx:  1 },
+    { x: W * .72,      y: H * .42,      rot:  25, sx: -1 },
+    { x: W * .12,      y: H * .58,      rot: -15, sx:  1 },
+    { x: W * .68,      y: H * .15,      rot:  30, sx: -1 },
+    { x: W * .25,      y: H * .72,      rot: -10, sx:  1 },
+    { x: cx,           y: cy,           rot:   0, sx:  1 },
+  ];
+
+  let wpIdx = 0, startT = null;
+  const SEG = 380; // ms per segment
+
+  function lerp(a, b, t) { return a + (b - a) * t; }
+  function easeInOut(t) { return t < .5 ? 2*t*t : -1+(4-2*t)*t; }
+
+  function flyBee(ts) {
+    if (done) return;
+    if (!startT) startT = ts;
+    const elapsed = ts - startT;
+    const seg = Math.floor(elapsed / SEG);
+    const t = easeInOut(Math.min((elapsed % SEG) / SEG, 1));
+
+    if (seg >= waypoints.length - 1) {
+      // Landed
+      const lp = waypoints[waypoints.length - 1];
+      beeEl.style.transform = `translate(${lp.x}px,${lp.y}px) rotate(0deg)`;
+      onLanded();
+      return;
+    }
+    const from = waypoints[Math.min(seg,     waypoints.length - 1)];
+    const to   = waypoints[Math.min(seg + 1, waypoints.length - 1)];
+    const x    = lerp(from.x, to.x, t);
+    const y    = lerp(from.y, to.y, t);
+    const rot  = lerp(from.rot, to.rot, t);
+    const sx   = t < .5 ? from.sx : to.sx;
+    beeEl.style.transform = `translate(${x}px,${y}px) rotate(${rot}deg) scaleX(${sx})`;
+    requestAnimationFrame(flyBee);
+  }
+
+  // ── Typewriter ────────────────────────────────────────────────────────────
+  const hour = new Date().getHours();
+  const greeting = hour < 12 ? 'Dobro jutro' : hour < 18 ? 'Dobar dan' : 'Dobro veče';
+  const msg = `${greeting}! Ja sam Pčela 🐝\nTvoj asistent za TVI evidenciju radnog vremena.`;
+
+  function typeWriter(text, el, i, cb) {
+    if (done) return;
+    if (i <= text.length) {
+      el.textContent = text.slice(0, i).replace(/\n/g, '\n');
+      el.innerHTML = el.textContent.replace(/\n/g, '<br>');
+      setTimeout(() => typeWriter(text, el, i + 1, cb), i === 0 ? 0 : 38);
+    } else { cb && cb(); }
+  }
+
+  // ── Sequence ──────────────────────────────────────────────────────────────
+  function onLanded() {
+    // Glow under bee
+    const lp = waypoints[waypoints.length - 1];
+    glow.style.left = (lp.x + 36 - 210) + 'px';
+    glow.style.top  = (lp.y + 42 - 210) + 'px';
+    glow.style.opacity = '1';
+
+    // Speech bubble next to bee
+    bubble.style.left = Math.min(lp.x + 85, W - 300) + 'px';
+    bubble.style.top  = Math.max(lp.y - 20, 10) + 'px';
+    bubble.classList.add('visible');
+
+    // Buzz landing chirp (short)
+    buzz(.4);
+
+    // Typewriter
+    typeWriter(msg, speechTx, 0, () => {
+      // After typing done, wait then dismiss
+      setTimeout(dismiss, 1600);
+    });
+  }
+
+  function dismiss() {
+    if (done) return;
+    done = true;
+    // Bee flies off top-right
+    const lp = waypoints[waypoints.length - 1];
+    beeEl.style.transition = 'transform .8s cubic-bezier(.4,0,1,1)';
+    beeEl.style.transform  = `translate(${W + 80}px,-120px) rotate(25deg)`;
+    bubble.style.opacity = '0';
+    setTimeout(() => {
+      overlay.classList.add('fade-out');
+      setTimeout(() => {
+        overlay.remove(); beeEl.remove(); bubble.remove(); skipHint.remove();
+      }, 750);
+    }, 300);
+  }
+
+  // Skip on click
+  function skip() { if (!done) dismiss(); }
+  overlay.addEventListener('click', skip);
+  document.getElementById('skip-hint').addEventListener('click', skip);
+
+  // Start
+  drawHex();
+  // Bee starts off-screen (transform: translate from top-left corner)
+  beeEl.style.transform = `translate(-90px,-90px) rotate(35deg)`;
+  beeEl.style.display = 'block';
+  buzz(2.6);
+  setTimeout(() => requestAnimationFrame(flyBee), 200);
+
+})();
+
+// ────────────────────────────────────────────────────────────────────────────
+// Init
+// ────────────────────────────────────────────────────────────────────────────
+AUTH_HEADER = localStorage.getItem('tvi_auth') || null;
+if (AUTH_HEADER) {
+  hideLogin();
+  loadMe();
+  loadDanas(); // api() će pozvati showLogin() ako je token istekao (401)
+}
+// else: login overlay ostaje vidljiv dok se korisnik ne prijavi
+</script>
+</body>
+</html>

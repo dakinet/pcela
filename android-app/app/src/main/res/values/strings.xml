@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Pčela</string>
+    <!-- Zameni URL adresom TVI Pčela web aplikacije (npr. Cloudflare tunnel ili server). -->
+    <string name="app_url">https://supplements-contamination-found-pixels.trycloudflare.com</string>
+</resources>
