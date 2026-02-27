@@ -1782,6 +1782,32 @@ def _chat_search_projects(pojam: str, domen: str = "") -> str:
     return "\n".join(lines)
 
 
+def _chat_get_employees() -> str:
+    """Vraća listu zaposlenih iz baze projekata (filter: Opšte 2026, domen 9)."""
+    if not PROJECTS_DB.exists():
+        return "Baza projekata ne postoji. Pokreni sinhronizaciju."
+    conn = sqlite3.connect(PROJECTS_DB)
+    rows = conn.execute(
+        "SELECT name FROM projects WHERE domain_code = '9' AND name LIKE '%2026%' ORDER BY name"
+    ).fetchall()
+    conn.close()
+    seen: set[str] = set()
+    names: list[str] = []
+    for (n,) in rows:
+        parts = n.split()
+        if len(parts) >= 3:
+            full = parts[0] + " " + parts[1]
+            norm = unicodedata.normalize("NFC", full)
+            if norm not in seen:
+                seen.add(norm)
+                names.append(full)
+    names.sort()
+    lines = [f"Ukupno zaposlenih: **{len(names)}**\n"]
+    for i, nm in enumerate(names, 1):
+        lines.append(f"{i}. {nm}")
+    return "\n".join(lines)
+
+
 def _chat_get_cars() -> str:
     """Vraća listu svih automobila sa vozačima za chat AI."""
     cars = _load_cars_from_db()
@@ -1892,6 +1918,7 @@ Dostupni alati:
 - tvi_delete — obriši zapis: obavezno `record_id` (hex string iz konteksta — zapisi su prikazani kao `[abcdef123...] 08:00–16:00 | Projekat | komentar`; vrednost u `[...]` je tačan `record_id`)
 - tvi_history — istorija perioda: opcionalno `od`, `do` (DD.MM.YYYY)
 - tvi_cars — lista automobila sa vozačima (bez argumenata)
+- tvi_employees — lista zaposlenih u firmi (bez argumenata); koristi kad korisnik pita "koliko ima zaposlenih", "ko radi u firmi", "lista zaposlenih"
 - tvi_mileage — kilometraža: za dan `datum` (DD.MM.YYYY), ili za period `od`/`do` (DD.MM.YYYY). Koristi kad korisnik pita o pređenim km, troškovima za auto, ili kilometraži za neki period.
 
 PRAVILA:
@@ -2019,6 +2046,20 @@ async def chat(req: ChatRequest, session: dict = Depends(check_auth)):
                     "project_number u formatu 'project_number=XXXX' — prepiši cifru DOSLOVNO "
                     "iz reda 'project_number=...' u rezultatima iznad. "
                     "NEMOJ sada pozvati tvi_log — sačekaj eksplicitnu potvrdu korisnika."
+                )}]})
+                continue
+
+            # ── Međukorak: tvi_employees → lista zaposlenih ──────────────────────
+            if action and action[0] == "tvi_employees" and round_num < MAX_ROUNDS - 1:
+                try:
+                    emp_result = await asyncio.to_thread(_chat_get_employees)
+                    _log_event(session["username"], "chat", "tvi_employees", {"round": round_num + 1})
+                except Exception as e:
+                    emp_result = f"Greška: {e}"
+                contents.append({"role": "model", "parts": [{"text": ai_text}]})
+                contents.append({"role": "user", "parts": [{"text": (
+                    f"[Rezultat tvi_employees]\n{emp_result}\n\n"
+                    "Prezentuj korisniku listu zaposlenih sa ukupnim brojem."
                 )}]})
                 continue
 
