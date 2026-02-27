@@ -1808,6 +1808,80 @@ def _chat_get_employees() -> str:
     return "\n".join(lines)
 
 
+# Podaci iz ličnih karata zaposlenih (skenirani dokumenti, február 2026)
+_EMPLOYEE_ID_CARDS: list[dict] = [
+    {"ime": "Aleksandar Mijailović",  "datum_rodjenja": "20.10.1982.", "jmbg": "2010982710106", "br_lk": "011188638", "adresa": "BEOGRAD, ČUKARICA, LEPOSAVE VUJOŠEVIĆ 011"},
+    {"ime": "Aleksandar Živković",    "datum_rodjenja": "06.08.1985.", "jmbg": "0608985710161", "br_lk": "014839449", "adresa": "UMKA, ČUKARICA, TRINAESTOG OKTOBRA 018"},
+    {"ime": "Aleksandra Gačević",     "datum_rodjenja": "20.04.1967.", "jmbg": "2004967715193", "br_lk": "010976178", "adresa": "BEOGRAD, ČUKARICA, CERSKI VENAC 023"},
+    {"ime": "Ana Mitić",              "datum_rodjenja": "03.08.1986.", "jmbg": "0308986715295", "br_lk": "015063968", "adresa": "BEOGRAD, NOVI BEOGRAD, BULEVAR ARSENIJA ČARNOJEVIĆA 051/41"},
+    {"ime": "Bojan Došlov",           "datum_rodjenja": "23.08.1995.", "jmbg": "2308995710031", "br_lk": "009720887", "adresa": "BEOGRAD, VOŽDOVAC, INDIRE GANDI 017"},
+    {"ime": "Boško Gligić",           "datum_rodjenja": "07.01.1982.", "jmbg": "0701982710152", "br_lk": "013864602", "adresa": "BEOGRAD, ZEMUN, OHRIDSKA 001"},
+    {"ime": "Boško Vuković",          "datum_rodjenja": "01.01.1990.", "jmbg": "0101990790036", "br_lk": "011532678", "adresa": "BEOGRAD, VOŽDOVAC, ŠUMADIJSKE DIVIZIJE 016/22"},
+    {"ime": "Branko Stanković",       "datum_rodjenja": "01.05.1985.", "jmbg": "0105985710216", "br_lk": "008116034", "adresa": "BEOGRAD, ČUKARICA, RATKA MITROVIĆA 133"},
+    {"ime": "Dalibor Gmitrović",      "datum_rodjenja": "13.02.1983.", "jmbg": "1302983760015", "br_lk": "011261404", "adresa": "BEOGRAD, ČUKARICA, LOLE RIBARA 002D/3"},
+    {"ime": "Danijela Lazarević",     "datum_rodjenja": "01.08.1973.", "jmbg": "0108973715327", "br_lk": "013965691", "adresa": "BEOGRAD, VRAČAR, SAZONOVA 058/2/9"},
+    {"ime": "Đorđe Ilić",            "datum_rodjenja": "17.01.1990.", "jmbg": "1701990710122", "br_lk": "012982956", "adresa": "SREMČICA, ČUKARICA, SARE BERNAR 053/POT/18"},
+    {"ime": "Đorđe Virijević",       "datum_rodjenja": "12.10.1979.", "jmbg": "1210979710346", "br_lk": "014293032", "adresa": "BEOGRAD, ČUKARICA, BRAĆE MITROVIĆA 021"},
+    {"ime": "Dragan Perić",           "datum_rodjenja": "29.03.1963.", "jmbg": "2903963890025", "br_lk": "012568372", "adresa": "MAČVANSKA MITROVICA, SREMSKA MITROVICA, 16. VOJVOĐANSKE DIVIZIJE 007"},
+    {"ime": "Dragana Đolović",        "datum_rodjenja": "09.02.1983.", "jmbg": "0902983738544", "br_lk": "011469666", "adresa": "BEOGRAD, VOŽDOVAC, RADA NEIMARA 073/7"},
+    {"ime": "Dušan Marković",         "datum_rodjenja": "02.02.1988.", "jmbg": "0202988710212", "br_lk": "012614607", "adresa": "BEOGRAD, ČUKARICA, MILORADA ĆIRIĆA 010"},
+    {"ime": "Filip Milovanović",      "datum_rodjenja": "26.04.1992.", "jmbg": "2604992762047", "br_lk": "014302578", "adresa": "POŽAREVAC, POŽAREVAC, MORAVSKA 019"},
+    {"ime": "Jaroslav Glagolevski",   "datum_rodjenja": "19.09.1991.", "jmbg": "ev.br.stranca 1909991060016", "br_lk": "000088430", "adresa": "BEOGRAD, ZEMUN, PRVE PRUGE 017/4/20"},
+    {"ime": "Jovan Đorđević",         "datum_rodjenja": "19.08.1999.", "jmbg": "1908999781026", "br_lk": "011487621", "adresa": "RIBARI, BRUS, NEMA ULICE BB"},
+    {"ime": "Jovan Ilić",             "datum_rodjenja": "31.03.1998.", "jmbg": "3103998742026", "br_lk": "009592796", "adresa": "ĆUKOVAC, VRANJE, NEMA ULICE BB"},
+    {"ime": "Jovan Milisavljević",    "datum_rodjenja": "20.04.2001.", "jmbg": "2004001763817", "br_lk": "012062309", "adresa": "BISTRICA, PETROVAC NA MLAVI, SRPSKIH VLADARA 089"},
+    {"ime": "Lazar Nedeljković",      "datum_rodjenja": "26.07.1997.", "jmbg": "2607997781030", "br_lk": "010448839", "adresa": "BEOGRAD, RAKOVICA, BOGDANA ŽERAJIĆA 006/19"},
+    {"ime": "Luka Kraker",            "datum_rodjenja": "04.11.2001.", "jmbg": "0411001710117", "br_lk": "012087122", "adresa": "OSTRUŽNICA, ČUKARICA, DOSITEJA OBRADOVIĆA 008"},
+    {"ime": "Mara Pavlović",          "datum_rodjenja": "01.03.2001.", "jmbg": "0103001765012", "br_lk": "011876857", "adresa": "SMEDEREVO, SMEDEREVO, ĐURE DANIČIĆA 107"},
+    {"ime": "Marko Branković",        "datum_rodjenja": "08.12.1991.", "jmbg": "0812991710064", "br_lk": "013289641", "adresa": "ROŽANCI, BARAJEVO, DESETOG OKTOBRA 006"},
+    {"ime": "Marko Burmazević",       "datum_rodjenja": "15.08.1996.", "jmbg": "1508996772028", "br_lk": "011997370", "adresa": "BEOGRAD, NOVI BEOGRAD, JURIJA GAGARINA 125/25"},
+    {"ime": "Marko Đuričić",         "datum_rodjenja": "19.11.1990.", "jmbg": "1911990710208", "br_lk": "012992184", "adresa": "LISOVIĆ, BARAJEVO, RATKA JEVTIĆA 242"},
+    {"ime": "Marko Gligić",           "datum_rodjenja": "06.01.1987.", "jmbg": "0601987710199", "br_lk": "010188493", "adresa": "BEOGRAD, NOVI BEOGRAD, ALEKSINAČKIH RUDARA 024/9"},
+    {"ime": "Marko Ikić",             "datum_rodjenja": "17.04.2004.", "jmbg": "1704004761015", "br_lk": "011101527", "adresa": "RATARI, SMEDEREVSKA PALANKA, LAZARA STANOJEVIĆA 060"},
+    {"ime": "Mićo Jarić",            "datum_rodjenja": "28.05.1966.", "jmbg": "2805966103278", "br_lk": "009959648", "adresa": "BEOGRAD, VOŽDOVAC, VOJVODE STEPE 066"},
+    {"ime": "Milan Ljubojević",       "datum_rodjenja": "23.03.1965.", "jmbg": "2303965350012", "br_lk": "012991094", "adresa": "BEOGRAD, ČUKARICA, SLOBODANA PEROVIĆA 004/6"},
+    {"ime": "Miloš Grbović",         "datum_rodjenja": "10.10.1996.", "jmbg": "1010996790036", "br_lk": "010494639", "adresa": "DRMANOVIĆI, NOVA VAROŠ, NEMA ULICE BB"},
+    {"ime": "Miloš Jovanović",       "datum_rodjenja": "07.08.1995.", "jmbg": "0708995710032", "br_lk": "009533226", "adresa": "VRANIĆ, BARAJEVO, BRATSTVA I JEDINSTVA 258"},
+    {"ime": "Miloš Pavlović",        "datum_rodjenja": "01.04.2004.", "jmbg": "0104004710258", "br_lk": "014896997", "adresa": "ROŽANCI, BARAJEVO, SELSKA 004"},
+    {"ime": "Miroljub Marjanović",    "datum_rodjenja": "23.07.1952.", "jmbg": "2307952710554", "br_lk": "005568024", "adresa": "BEOGRAD, ZVEZDARA, VELJKA DUGOŠEVIĆA 006/9"},
+    {"ime": "Mladen Jakovljević",     "datum_rodjenja": "29.07.1988.", "jmbg": "2907988710310", "br_lk": "009637862", "adresa": "BEOGRAD, RAKOVICA, VIDIKOVAČKI VENAC 053/47"},
+    {"ime": "Momčilo Zdravković",     "datum_rodjenja": "13.06.1995.", "jmbg": "1306995710043", "br_lk": "008388941", "adresa": "BEOGRAD, SAVSKI VENAC, CARA HALIJARDA 001"},
+    {"ime": "Nemanja Golubović",      "datum_rodjenja": "05.06.1994.", "jmbg": "0506994752031", "br_lk": "014685540", "adresa": "NEGOTIN, NEGOTIN, DOBRILE RADOSAVLJEVIĆ 033/4"},
+    {"ime": "Nemanja Mirosavić",      "datum_rodjenja": "13.08.1991.", "jmbg": "1308991710297", "br_lk": "013863629", "adresa": "BARAJEVO, BARAJEVO, ŽIVKA STEVANOVIĆA-ŽIKICE 079B"},
+    {"ime": "Nemanja Rosić",          "datum_rodjenja": "02.10.1995.", "jmbg": "0210995710026", "br_lk": "010005468", "adresa": "BEOGRAD, NOVI BEOGRAD, BULEVAR ZORANA ĐINĐIĆA 205/21"},
+    {"ime": "Nikola Dragišić",        "datum_rodjenja": "20.07.2000.", "jmbg": "2007000820018", "br_lk": "012078636", "adresa": "NOVI ŽEDNIK, SUBOTICA, NIKOLE TESLE 002"},
+    {"ime": "Predrag Pantić",         "datum_rodjenja": "18.10.2001.", "jmbg": "1810001710171", "br_lk": "012444483", "adresa": "BARAJEVO, BARAJEVO, DVADESETOG OKTOBRA 003"},
+    {"ime": "Radomir Kerkez",         "datum_rodjenja": "13.12.1985.", "jmbg": "1312985710266", "br_lk": "012159329", "adresa": "ZUCE, VOŽDOVAC, NOVA 12 016B"},
+    {"ime": "Vlada Gajić",            "datum_rodjenja": "30.04.1984.", "jmbg": "3004984710042", "br_lk": "011818283", "adresa": "RALJA, SOPOT, RADA JOVANOVIĆA 029"},
+    {"ime": "Zoran Petrović",         "datum_rodjenja": "04.08.1964.", "jmbg": "0408964710189", "br_lk": "008380262", "adresa": "BAČEVAC, BARAJEVO, MILENIJE IVANOVIĆ 024"},
+]
+
+
+def _chat_get_id_card(ime: str) -> str:
+    """Traži podatke lične karte zaposlenog po imenu ili prezimenu."""
+    needle = unicodedata.normalize("NFC", ime.strip().lower())
+    # normalizuj i bez dijakritika za fleksibilniju pretragu
+    def _norm(s: str) -> str:
+        import unicodedata as _u
+        nfkd = _u.normalize("NFKD", s.lower())
+        return "".join(c for c in nfkd if not _u.combining(c))
+    needle_plain = _norm(ime.strip())
+    results = []
+    for rec in _EMPLOYEE_ID_CARDS:
+        name = rec["ime"]
+        if needle in unicodedata.normalize("NFC", name.lower()) or needle_plain in _norm(name):
+            results.append(
+                f"**{name}**\n"
+                f"  Datum rođenja : {rec['datum_rodjenja']}\n"
+                f"  JMBG          : {rec['jmbg']}\n"
+                f"  Br. lične karte: {rec['br_lk']}\n"
+                f"  Adresa        : {rec['adresa']}"
+            )
+    if not results:
+        return f"Nema podataka lične karte za '{ime}'. Podaci postoje za 44 od 72 zaposlenih."
+    return "\n\n".join(results)
+
+
 def _chat_get_cars() -> str:
     """Vraća listu svih automobila sa vozačima za chat AI."""
     cars = _load_cars_from_db()
@@ -1920,6 +1994,7 @@ Dostupni alati:
 - tvi_cars — lista automobila sa vozačima (bez argumenata)
 - tvi_employees — lista zaposlenih u firmi (bez argumenata); koristi kad korisnik pita "koliko ima zaposlenih", "ko radi u firmi", "lista zaposlenih"
 - tvi_mileage — kilometraža: za dan `datum` (DD.MM.YYYY), ili za period `od`/`do` (DD.MM.YYYY). Koristi kad korisnik pita o pređenim km, troškovima za auto, ili kilometraži za neki period.
+- tvi_licna_karta — podaci lične karte zaposlenog: `ime` (ime i/ili prezime). Vraća JMBG, broj lične karte, datum rođenja, adresu stanovanja. Podaci postoje za 44 od 72 zaposlenih.
 
 PRAVILA:
 1. Ako korisnik pomene projekat po imenu (ili delu naziva) — UVEK i BEZ IZUZETKA pozovi tvi_search u prvoj poruci. Ne preskačaj ovaj korak čak ni ako misliš da znaš projekat. Ne možeš znati tačan project_number bez pretrage.
@@ -1935,6 +2010,7 @@ PRAVILA:
 10. Kad korisnik pita "koliko km sam prešao", "kilometraža za dan/nedelju/mesec", "troškovi za auto" → ODMAH pozovi tvi_mileage
 11. U kontekstu imaš samo SUMARNI mesečni pregled — za DETALJE po danu ili periodu UVEK koristi tvi_mileage alat
 12. Za "danas" koristi tvi_mileage sa datum današnjeg datuma; za "ove nedelje" izračunaj ponedeljak i petak i koristi od/do
+14. tvi_licna_karta je READ-ONLY — pozivaj ODMAH kad korisnik pita za JMBG, broj lične karte, adresu ili datum rođenja nekog zaposlenog
 """
 
 
@@ -2094,6 +2170,20 @@ async def chat(req: ChatRequest, session: dict = Depends(check_auth)):
                 contents.append({"role": "user", "parts": [{"text": (
                     f"[Rezultat tvi_mileage]\n{mileage_result}\n\n"
                     "Prezentuj rezultate korisniku — lepo formatirano, sa svim detaljima o km i troškovima."
+                )}]})
+                continue
+
+            # ── Međukorak: tvi_licna_karta → podaci lične karte ──────────────────
+            if action and action[0] == "tvi_licna_karta" and round_num < MAX_ROUNDS - 1:
+                try:
+                    lk_result = await asyncio.to_thread(_chat_get_id_card, tool_args.get("ime", ""))
+                    _log_event(session["username"], "chat", "tvi_licna_karta", {"args": tool_args})
+                except Exception as e:
+                    lk_result = f"Greška: {e}"
+                contents.append({"role": "model", "parts": [{"text": ai_text}]})
+                contents.append({"role": "user", "parts": [{"text": (
+                    f"[Rezultat tvi_licna_karta]\n{lk_result}\n\n"
+                    "Prezentuj korisniku podatke iz lične karte lepo formatirano."
                 )}]})
                 continue
 
