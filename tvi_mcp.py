@@ -308,7 +308,10 @@ async def tvi_log(
                 activities_id, requests_id, proj_name = proj
                 project_info = f"#{project_number} {proj_name[:40]}"
             else:
-                project_info = f"#{project_number} (nije nadjen u bazi, koristim podrazumevani)"
+                raise RuntimeError(
+                    f"Projekat sa brojem '{project_number}' nije pronađen u bazi. "
+                    f"Pokreni tvi_search da nađeš tačan activityNumber."
+                )
 
         # Vremena
         try:
