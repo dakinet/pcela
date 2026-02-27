@@ -2065,7 +2065,7 @@ async def chat(req: ChatRequest, session: dict = Depends(check_auth)):
                         tool_result = await fn(**tool_args)
                         result_str = str(tool_result)
                         _log_event(session["username"], "chat", tool_name, {"args": tool_args})
-                        clean_text += "\n\n✅ Urađeno."
+                        clean_text += f"\n\n✅ {result_str}"
                     except Exception as e:
                         result_str = f"Greška: {e}"
                         clean_text += f"\n\n❌ {e}"
