@@ -2021,9 +2021,11 @@ _CHAT_ACTION_INSTRUCTIONS = """
 
 ## Kako da izvršiš akciju
 
-Kada korisnik potvrdi da želi da upišeš/obrišeš podatke, napiši prijatan odgovor koji opisuje šta radiš (projekat, vreme, komentar), a na SAMOM KRAJU dodaj akcioni tag (ništa posle njega):
+Akcioni tag koristiš ZA SVE ALATE — i za čitanje podataka (read-only) i za upis/brisanje. Dodaj ga na SAMOM KRAJU odgovora (ništa posle njega):
 
 ⚙{"tool":"IME_ALATA", "arg1":"val1", "arg2":"val2"}⚙
+
+Za alate bez argumenata: ⚙{"tool":"tvi_birthdays"}⚙
 
 Dostupni alati:
 - tvi_log — upiši radno vreme: obavezno `end_time` (HH:MM), opcionalno `start_time`, `project_number`, `comment`, `datum`
@@ -2217,6 +2219,7 @@ async def chat(req: ChatRequest, session: dict = Depends(check_auth)):
 
             # ── Međukorak: tvi_licna_karta → podaci lične karte ──────────────────
             if action and action[0] == "tvi_licna_karta" and round_num < MAX_ROUNDS - 1:
+                tool_args = action[1]
                 try:
                     lk_result = await asyncio.to_thread(_chat_get_id_card, tool_args.get("ime", ""))
                     _log_event(session["username"], "chat", "tvi_licna_karta", {"args": tool_args})
