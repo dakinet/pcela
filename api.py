@@ -1882,6 +1882,46 @@ def _chat_get_id_card(ime: str) -> str:
     return "\n\n".join(results)
 
 
+def _chat_get_birthdays(n: int = 10) -> str:
+    """Vraća N sledećih predstoječih rođendana zaposlenih, sortirano po broju dana."""
+    from datetime import date as _date
+    today = _date.today()
+    entries = []
+    for rec in _EMPLOYEE_ID_CARDS:
+        dr = rec.get("datum_rodjenja", "").rstrip(".")
+        if not dr:
+            continue
+        try:
+            parts = dr.split(".")
+            day, month, year = int(parts[0]), int(parts[1]), int(parts[2])
+        except Exception:
+            continue
+        try:
+            next_bday = _date(today.year, month, day)
+        except ValueError:
+            continue  # 29.02 u ne-prestupnoj godini — preskočiti
+        if next_bday < today:
+            try:
+                next_bday = _date(today.year + 1, month, day)
+            except ValueError:
+                continue
+        days_until = (next_bday - today).days
+        age_on_bday = next_bday.year - year
+        entries.append((days_until, rec["ime"], f"{day:02d}.{month:02d}.{year}.", age_on_bday))
+    entries.sort(key=lambda x: x[0])
+    top = entries[:n]
+    lines = [f"Predstojeći rođendani (danas: {today.strftime('%d.%m.%Y.')}):\n"]
+    for days, ime, dr_fmt, age in top:
+        if days == 0:
+            kada = "🎂 DANAS"
+        elif days == 1:
+            kada = "sutra"
+        else:
+            kada = f"za {days} dana"
+        lines.append(f"- **{ime}** ({dr_fmt}) — {kada}, puni {age} god.")
+    return "\n".join(lines)
+
+
 def _chat_get_cars() -> str:
     """Vraća listu svih automobila sa vozačima za chat AI."""
     cars = _load_cars_from_db()
@@ -1995,6 +2035,7 @@ Dostupni alati:
 - tvi_employees — lista zaposlenih u firmi (bez argumenata); koristi kad korisnik pita "koliko ima zaposlenih", "ko radi u firmi", "lista zaposlenih"
 - tvi_mileage — kilometraža: za dan `datum` (DD.MM.YYYY), ili za period `od`/`do` (DD.MM.YYYY). Koristi kad korisnik pita o pređenim km, troškovima za auto, ili kilometraži za neki period.
 - tvi_licna_karta — podaci lične karte zaposlenog: `ime` (ime i/ili prezime). Vraća JMBG, broj lične karte, datum rođenja, adresu stanovanja. Podaci postoje za 44 od 72 zaposlenih.
+- tvi_birthdays — predstojeći rođendani SVIH zaposlenih sortirani po datumu; opciono `n` (koliko da prikaže, podrazumevano 10). Pozivaj BEZ argumenata kad korisnik pita "kome predstoji rođendan", "ko ima sledeći rođendan", "čiji je sledeći rođendan" i slično.
 
 PRAVILA:
 1. Ako korisnik pomene projekat po imenu (ili delu naziva) — UVEK i BEZ IZUZETKA pozovi tvi_search u prvoj poruci. Ne preskačaj ovaj korak čak ni ako misliš da znaš projekat. Ne možeš znati tačan project_number bez pretrage.
@@ -2011,6 +2052,7 @@ PRAVILA:
 11. U kontekstu imaš samo SUMARNI mesečni pregled — za DETALJE po danu ili periodu UVEK koristi tvi_mileage alat
 12. Za "danas" koristi tvi_mileage sa datum današnjeg datuma; za "ove nedelje" izračunaj ponedeljak i petak i koristi od/do
 14. tvi_licna_karta je READ-ONLY — pozivaj ODMAH kad korisnik pita za JMBG, broj lične karte, adresu ili datum rođenja nekog zaposlenog
+15. tvi_birthdays pozivaj ODMAH (bez ikakvog argumenta) kad korisnik pita ko ima sledeći/predstojeći/bliži rođendan — ovaj alat VEĆ zna sve datume za sve zaposlene, nema potrebe da tražiš ime po ime
 """
 
 
@@ -2184,6 +2226,21 @@ async def chat(req: ChatRequest, session: dict = Depends(check_auth)):
                 contents.append({"role": "user", "parts": [{"text": (
                     f"[Rezultat tvi_licna_karta]\n{lk_result}\n\n"
                     "Prezentuj korisniku podatke iz lične karte lepo formatirano."
+                )}]})
+                continue
+
+            # ── Međukorak: tvi_birthdays → predstojeći rođendani ─────────────────
+            if action and action[0] == "tvi_birthdays" and round_num < MAX_ROUNDS - 1:
+                try:
+                    n_bday = int(tool_args.get("n", 10)) if tool_args else 10
+                    bday_result = await asyncio.to_thread(_chat_get_birthdays, n_bday)
+                    _log_event(session["username"], "chat", "tvi_birthdays", {"args": tool_args})
+                except Exception as e:
+                    bday_result = f"Greška: {e}"
+                contents.append({"role": "model", "parts": [{"text": ai_text}]})
+                contents.append({"role": "user", "parts": [{"text": (
+                    f"[Rezultat tvi_birthdays]\n{bday_result}\n\n"
+                    "Odgovori korisniku ko ima sledeći predstojeći rođendan i kada."
                 )}]})
                 continue
 
