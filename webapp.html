@@ -782,63 +782,61 @@
 
   <div id="tab-admin" class="section">
     <div class="card form-card" style="margin-bottom:.75rem">
-      <div class="form-title" onclick="toggleLogPanel()" style="cursor:pointer;display:flex;align-items:center;justify-content:space-between;user-select:none">
+      <div class="form-title" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.75rem">
         <span>📋 Server logovi</span>
-        <span id="log-panel-arrow" style="font-size:.85rem;transition:transform .2s;display:inline-block">▼</span>
+        <span id="log-panel-arrow" onclick="toggleLogPanel()" title="Prikaži/sakrij logove"
+              style="font-size:.85rem;transition:transform .2s;display:inline-block;cursor:pointer;padding:.1rem .4rem;border-radius:4px"
+              >▼</span>
       </div>
-      <div id="log-panel-body">
-        <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:flex-end;margin-bottom:.5rem">
-          <div class="form-group" style="flex:1;min-width:110px;margin-bottom:0">
-            <label class="form-lbl">Korisnik</label>
-            <input class="form-input" id="log-filter-user" placeholder="svi" style="height:36px">
-          </div>
-          <div class="form-group" style="flex:1;min-width:110px;margin-bottom:0">
-            <label class="form-lbl">Akcija</label>
-            <select class="form-input" id="log-filter-action" style="height:36px">
-              <option value="">sve</option>
-              <option value="log">upis (log)</option>
-              <option value="login">login</option>
-              <option value="auth">auth</option>
-              <option value="parse-voice">glas (parse-voice)</option>
-              <option value="delete">brisanje (delete)</option>
-              <option value="delete-day">briši dan (delete-day)</option>
-              <option value="mileage">kilometraža (mileage)</option>
-              <option value="auto-sync">auto-sync projekti</option>
-              <option value="auto-sync-cars">auto-sync auta</option>
-              <option value="auto-sync-timesheets">auto-sync radnog vremena</option>
-              <option value="scheduler">scheduler</option>
-              <option value="tvi_employees">chat: zaposleni</option>
-              <option value="tvi_cars">chat: auta</option>
-              <option value="tvi_mileage">chat: kilometraža</option>
-              <option value="tvi_licna_karta">chat: lična karta</option>
-              <option value="tvi_birthdays">chat: rođendani</option>
-              <option value="tvi_timesheet_stats">chat: statistika</option>
-            </select>
+      <div style="display:flex;gap:.4rem;align-items:flex-end;flex-wrap:nowrap;margin-bottom:.5rem">
+        <div class="form-group" style="flex:1.2;margin-bottom:0">
+          <label class="form-lbl">Korisnik</label>
+          <input class="form-input" id="log-filter-user" placeholder="svi" style="height:34px">
+        </div>
+        <div class="form-group" style="flex:1.5;margin-bottom:0">
+          <label class="form-lbl">Akcija</label>
+          <select class="form-input" id="log-filter-action" style="height:34px;font-size:.8rem">
+            <option value="">sve</option>
+            <option value="log">upis (log)</option>
+            <option value="login">login</option>
+            <option value="auth">auth</option>
+            <option value="parse-voice">glas</option>
+            <option value="delete">brisanje</option>
+            <option value="delete-day">briši dan</option>
+            <option value="mileage">kilometraža</option>
+            <option value="auto-sync">auto-sync projekti</option>
+            <option value="auto-sync-cars">auto-sync auta</option>
+            <option value="auto-sync-timesheets">auto-sync rv</option>
+            <option value="scheduler">scheduler</option>
+            <option value="tvi_employees">chat: zaposleni</option>
+            <option value="tvi_cars">chat: auta</option>
+            <option value="tvi_mileage">chat: km</option>
+            <option value="tvi_licna_karta">chat: lk</option>
+            <option value="tvi_birthdays">chat: rodjendani</option>
+            <option value="tvi_timesheet_stats">chat: statistika</option>
+          </select>
+        </div>
+        <div class="form-group" style="flex:1;margin-bottom:0">
+          <label class="form-lbl">Od</label>
+          <div class="input-wrap">
+            <input class="form-input" id="log-filter-od" placeholder="DD.MM.YYYY" style="height:34px;padding-right:2rem">
+            <button class="input-cal" onclick="openLogPicker('od')" title="Izaberi datum">📅</button>
+            <input type="date" id="log-od-dp" style="position:absolute;opacity:0;pointer-events:none;width:0;height:0"
+                   onchange="pickLogDate('od',this.value)">
           </div>
         </div>
-        <div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:flex-end;margin-bottom:.75rem">
-          <div class="form-group" style="flex:1;min-width:110px;margin-bottom:0">
-            <label class="form-lbl">Od</label>
-            <div class="input-wrap">
-              <input class="form-input" id="log-filter-od" placeholder="DD.MM.YYYY" style="height:36px;padding-right:2.2rem">
-              <button class="input-cal" onclick="openLogPicker('od')" title="Izaberi datum">📅</button>
-              <input type="date" id="log-od-dp" style="position:absolute;opacity:0;pointer-events:none;width:0;height:0"
-                     onchange="pickLogDate('od',this.value)">
-            </div>
+        <div class="form-group" style="flex:1;margin-bottom:0">
+          <label class="form-lbl">Do</label>
+          <div class="input-wrap">
+            <input class="form-input" id="log-filter-do" placeholder="DD.MM.YYYY" style="height:34px;padding-right:2rem">
+            <button class="input-cal" onclick="openLogPicker('do')" title="Izaberi datum">📅</button>
+            <input type="date" id="log-do-dp" style="position:absolute;opacity:0;pointer-events:none;width:0;height:0"
+                   onchange="pickLogDate('do',this.value)">
           </div>
-          <div class="form-group" style="flex:1;min-width:110px;margin-bottom:0">
-            <label class="form-lbl">Do</label>
-            <div class="input-wrap">
-              <input class="form-input" id="log-filter-do" placeholder="DD.MM.YYYY" style="height:36px;padding-right:2.2rem">
-              <button class="input-cal" onclick="openLogPicker('do')" title="Izaberi datum">📅</button>
-              <input type="date" id="log-do-dp" style="position:absolute;opacity:0;pointer-events:none;width:0;height:0"
-                     onchange="pickLogDate('do',this.value)">
-            </div>
-          </div>
-          <button class="btn-primary" style="height:36px;padding:0 1rem" onclick="loadLogs()">Osveži</button>
         </div>
-        <div id="log-summary" style="font-size:.75rem;color:#6b7280;margin-bottom:.5rem"></div>
+        <button class="btn-primary" style="height:34px;padding:0 .75rem;flex-shrink:0" onclick="loadLogs()">Osveži</button>
       </div>
+      <div id="log-summary" style="font-size:.75rem;color:#6b7280"></div>
     </div>
     <div id="log-entries"></div>
 
@@ -2879,11 +2877,11 @@ async function loadSyncStatus() {
 }
 
 function toggleLogPanel() {
-  const body  = document.getElementById('log-panel-body');
-  const arrow = document.getElementById('log-panel-arrow');
-  const open  = body.style.display !== 'none';
-  body.style.display  = open ? 'none' : '';
-  arrow.style.transform = open ? 'rotate(-90deg)' : '';
+  const entries = document.getElementById('log-entries');
+  const arrow   = document.getElementById('log-panel-arrow');
+  const open    = entries.style.display !== 'none';
+  entries.style.display   = open ? 'none' : '';
+  arrow.style.transform   = open ? 'rotate(-90deg)' : '';
 }
 
 function openLogPicker(which) {
