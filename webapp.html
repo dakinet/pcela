@@ -103,8 +103,12 @@
     .form-title { font-weight: 700; font-size: .95rem; color: #1e3a5f; margin-bottom: .9rem; }
     .form-group { margin-bottom: .8rem; }
     .form-lbl { display: block; font-size: .76rem; font-weight: 600; color: #374151; margin-bottom: .28rem; }
-    .form-input { width: 100%; border: 1px solid #d1d5db; border-radius: 8px; padding: .55rem .75rem; font-size: .88rem; outline: none; transition: border .15s; background: #fff; color: #1a202c; }
+    .form-input { width: 100%; border: 1px solid #d1d5db; border-radius: 8px; padding: .55rem .75rem; font-size: .88rem; outline: none; transition: border .15s; background: #fff; color: #1a202c; box-sizing: border-box; }
     .form-input:focus { border-color: #2563eb; }
+    .input-wrap { position: relative; }
+    .input-wrap .form-input { padding-right: 2.2rem; }
+    .input-cal { position: absolute; right: .4rem; top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer; font-size: 1rem; line-height: 1; padding: 0; color: #6b7280; }
+    .input-cal:hover { color: #2563eb; }
     .form-row { display: flex; gap: .65rem; }
     .form-row .form-group { flex: 1; }
     .form-btns { display: flex; gap: .5rem; margin-top: .9rem; }
@@ -674,11 +678,21 @@
       <div class="form-row">
         <div class="form-group">
           <label class="form-lbl">Od</label>
-          <input type="text" class="form-input" id="h-od" placeholder="DD.MM.YYYY">
+          <div class="input-wrap">
+            <input type="text" class="form-input" id="h-od" placeholder="DD.MM.YYYY">
+            <button class="input-cal" onclick="openHistPicker('od')" title="Izaberi datum">📅</button>
+            <input type="date" id="h-od-dp" style="position:absolute;opacity:0;pointer-events:none;width:0;height:0"
+                   onchange="pickHistDate('od', this.value)">
+          </div>
         </div>
         <div class="form-group">
           <label class="form-lbl">Do</label>
-          <input type="text" class="form-input" id="h-do" placeholder="DD.MM.YYYY">
+          <div class="input-wrap">
+            <input type="text" class="form-input" id="h-do" placeholder="DD.MM.YYYY">
+            <button class="input-cal" onclick="openHistPicker('do')" title="Izaberi datum">📅</button>
+            <input type="date" id="h-do-dp" style="position:absolute;opacity:0;pointer-events:none;width:0;height:0"
+                   onchange="pickHistDate('do', this.value)">
+          </div>
         </div>
       </div>
       <div style="display:flex;gap:.5rem;margin-top:.6rem">
@@ -1704,6 +1718,22 @@ function pickDate(val) {
   const [y, m, d] = val.split('-');
   S.datum = `${d}.${m}.${y}`;
   loadDanas();
+}
+
+function openHistPicker(which) {
+  const dp = document.getElementById(`h-${which}-dp`);
+  const txt = document.getElementById(`h-${which}`).value;
+  if (txt && /^\d{2}\.\d{2}\.\d{4}$/.test(txt)) {
+    const [d, m, y] = txt.split('.');
+    dp.value = `${y}-${m}-${d}`;
+  }
+  dp.showPicker ? dp.showPicker() : dp.click();
+}
+
+function pickHistDate(which, val) {
+  if (!val) return;
+  const [y, m, d] = val.split('-');
+  document.getElementById(`h-${which}`).value = `${d}.${m}.${y}`;
 }
 
 async function loadDanas() {
