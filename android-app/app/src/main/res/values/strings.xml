@@ -2,5 +2,5 @@
 <resources>
     <string name="app_name">Pčela</string>
     <!-- Zameni URL adresom TVI Pčela web aplikacije (npr. Cloudflare tunnel ili server). -->
-    <string name="app_url">https://supplements-contamination-found-pixels.trycloudflare.com</string>
+    <string name="app_url">https://pcela.tvi.rs</string>
 </resources>

