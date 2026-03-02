@@ -1736,13 +1736,22 @@ def _sync_timesheets_blocking(
             recs = result["result"] if result and "result" in result and result["result"] else []
 
             for r in recs:
-                raw_id = r.get("_id")
-                rec_id = raw_id.get("$value") if isinstance(raw_id, dict) else (str(raw_id) if raw_id else None)
-                if not rec_id:
-                    continue
                 st = r.get("startTime")
                 et = r.get("endTime")
                 dt = r.get("date")
+                st_ms = st["$date"] if isinstance(st, dict) else 0
+                et_ms = et["$date"] if isinstance(et, dict) else 0
+                dt_ms = dt["$date"] if isinstance(dt, dict) else 0
+                # _id ne postoji u odgovoru — pravimo sintetički ID
+                raw_id = r.get("_id")
+                if raw_id:
+                    rec_id = raw_id.get("$value") if isinstance(raw_id, dict) else str(raw_id)
+                else:
+                    req = r.get("request", {})
+                    req_val = req.get("$value", "") if isinstance(req, dict) else ""
+                    rec_id = f"{effective_user_id}_{st_ms}_{et_ms}_{req_val[:12]}"
+                if not rec_id:
+                    continue
                 conn.execute("""
                     INSERT OR REPLACE INTO request_times
                     (id, user_id, user_name, start_ms, end_ms, date_ms,
@@ -1752,11 +1761,11 @@ def _sync_timesheets_blocking(
                     rec_id,
                     effective_user_id,
                     acc["full_name"],
-                    st["$date"] if isinstance(st, dict) else 0,
-                    et["$date"] if isinstance(et, dict) else 0,
-                    dt["$date"] if isinstance(dt, dict) else 0,
+                    st_ms,
+                    et_ms,
+                    dt_ms,
                     r.get("hours") or 0.0,
-                    r.get("pricePerHour") or acc["price_per_hour"],
+                    r.get("costPerHour") or acc["price_per_hour"],
                     r.get("total") or 0.0,
                     r.get("comment") or "",
                     r.get("requestName") or "",
