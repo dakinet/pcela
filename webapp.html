@@ -580,9 +580,15 @@
 
       <div class="form-group">
         <label class="form-lbl">Automobil</label>
-        <select class="km-select" id="km-car" onchange="onKmCarChange()">
-          <option value="">— Izaberi automobil —</option>
-        </select>
+        <div class="proj-wrap" id="km-car-wrap">
+          <input type="text" class="km-select" id="km-car-search"
+                 placeholder="Pretraži po tablici ili imenu…"
+                 autocomplete="off"
+                 oninput="onKmCarSearch(this.value)"
+                 onfocus="onKmCarSearch(this.value)">
+          <div class="proj-results hidden" id="km-car-results"></div>
+        </div>
+        <input type="hidden" id="km-car">
         <div class="km-info hidden" id="km-car-info"></div>
       </div>
 
@@ -2036,6 +2042,8 @@ document.addEventListener('click', e => {
     document.getElementById('proj-results').classList.add('hidden');
   if (!e.target.closest('#km-proj-wrap'))
     document.getElementById('km-proj-results').classList.add('hidden');
+  if (!e.target.closest('#km-car-wrap'))
+    document.getElementById('km-car-results').classList.add('hidden');
 });
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -2065,14 +2073,14 @@ async function openKmForm() {
     _kmDefaultProjects = d.km_projects || [];
   } catch { _kmCars = []; _kmMyCarId = null; _kmDefaultProjects = []; }
 
-  const sel = document.getElementById('km-car');
-  sel.innerHTML = '<option value="">— Izaberi automobil —</option>' +
-    _kmCars.map(c => `<option value="${esc(c._id)}">${esc(c.name)} (${c.unitPrice} din/km)</option>`).join('');
+  // Resetuj car search
+  document.getElementById('km-car-search').value = '';
+  document.getElementById('km-car').value = '';
+  document.getElementById('km-car-results').classList.add('hidden');
 
   // Auto-select korisnikov auto
   if (_kmMyCarId) {
-    sel.value = _kmMyCarId;
-    onKmCarChange();
+    selectKmCar(_kmMyCarId);
   }
 
   // Ponudi podrazumevane projekte za kilometražu
@@ -2101,8 +2109,7 @@ async function openKmForm() {
   document.getElementById('km-car-info').classList.add('hidden');
   document.getElementById('btn-km-save').disabled = true;
 
-  // Ako je auto auto-izabran, ponovo pokreni onKmCarChange za startKm
-  if (_kmMyCarId) onKmCarChange();
+  // Ako je auto auto-izabran, onKmCarChange je već pozvan u selectKmCar
 }
 
 function selectKmQuickProj(idx) {
@@ -2114,6 +2121,32 @@ function selectKmQuickProj(idx) {
 function closeKmForm() {
   document.getElementById('km-card').classList.add('hidden');
   document.querySelector('.action-row').classList.remove('hidden');
+}
+
+function onKmCarSearch(v) {
+  const res = document.getElementById('km-car-results');
+  const q = v.trim().toLowerCase();
+  const filtered = q
+    ? _kmCars.filter(c => c.name.toLowerCase().includes(q))
+    : _kmCars;
+  if (!filtered.length) {
+    res.innerHTML = '<div class="proj-result-item" style="color:#9ca3af">Nema rezultata</div>';
+    res.classList.remove('hidden');
+    return;
+  }
+  res.innerHTML = filtered.map(c =>
+    `<div class="proj-result-item" onclick="selectKmCar('${esc(c._id)}')">${esc(c.name)}</div>`
+  ).join('');
+  res.classList.remove('hidden');
+}
+
+function selectKmCar(carId) {
+  const car = _kmCars.find(c => c._id === carId);
+  if (!car) return;
+  document.getElementById('km-car').value = carId;
+  document.getElementById('km-car-search').value = car.name;
+  document.getElementById('km-car-results').classList.add('hidden');
+  onKmCarChange();
 }
 
 async function onKmCarChange() {
