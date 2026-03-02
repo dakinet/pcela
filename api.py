@@ -2266,6 +2266,44 @@ def _chat_get_mileage(datum: str = "", od: str = "", do: str = "") -> str:
     return "\n".join(lines)
 
 
+def _chat_get_timesheet_stats(korisnik: str = "") -> str:
+    """Vraća broj unosa radnog vremena po korisniku iz lokalne baze."""
+    if not PROJECTS_DB.exists():
+        return "Baza ne postoji. Pokreni /api/timesheets/sync."
+    conn = sqlite3.connect(PROJECTS_DB)
+    tbl = conn.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name='request_times'"
+    ).fetchone()
+    if not tbl:
+        conn.close()
+        return "Tabela request_times ne postoji. Pokreni sinhronizaciju radnog vremena."
+    if korisnik:
+        rows = conn.execute(
+            "SELECT user_name, COUNT(*) as cnt FROM request_times "
+            "WHERE user_name LIKE ? GROUP BY user_name ORDER BY user_name",
+            (f"%{korisnik}%",),
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT user_name, COUNT(*) as cnt FROM request_times "
+            "GROUP BY user_name ORDER BY user_name"
+        ).fetchall()
+    conn.close()
+    if not rows:
+        return "Nema podataka u request_times tabeli."
+    total = sum(r[1] for r in rows)
+    w = max(len(r[0]) for r in rows)
+    sep = f"  ├{'─'*(w+2)}┼{'─'*8}┤"
+    top = f"  ┌{'─'*(w+2)}┬{'─'*8}┐"
+    bot = f"  └{'─'*(w+2)}┴{'─'*8}┘"
+    hdr = f"  │ {'Korisnik':<{w}} │ {'Unosa':>6} │"
+    lines = [f"Statistika unosa radnog vremena (ukupno {total}):\n", top, hdr, sep]
+    for name, cnt in rows:
+        lines.append(f"  │ {name:<{w}} │ {cnt:>6} │")
+    lines.append(bot)
+    return "\n".join(lines)
+
+
 # Format taga: ⚙{"tool":"tvi_log","end_time":"18:00","comment":"..."}⚙
 
 _CHAT_ACTION_INSTRUCTIONS = """
@@ -2289,6 +2327,7 @@ Dostupni alati:
 - tvi_mileage — kilometraža: za dan `datum` (DD.MM.YYYY), ili za period `od`/`do` (DD.MM.YYYY). Koristi kad korisnik pita o pređenim km, troškovima za auto, ili kilometraži za neki period.
 - tvi_licna_karta — podaci lične karte zaposlenog: `ime` (ime i/ili prezime). Vraća JMBG, broj lične karte, datum rođenja, adresu stanovanja. Podaci postoje za 44 od 72 zaposlenih.
 - tvi_birthdays — predstojeći rođendani SVIH zaposlenih sortirani po datumu; opciono `n` (koliko da prikaže, podrazumevano 10). Pozivaj BEZ argumenata kad korisnik pita "kome predstoji rođendan", "ko ima sledeći rođendan", "čiji je sledeći rođendan" i slično.
+- tvi_timesheet_stats — broj unosa radnog vremena po korisniku iz lokalne baze; opciono `korisnik` (deo imena za filter). Pozivaj ODMAH kad korisnik pita "koliko unosa ima ko", "statistika zaposlenih", "ko koliko ima zapisa", "broj unosa po korisniku".
 
 PRAVILA:
 1. Ako korisnik pomene projekat po imenu (ili delu naziva) — UVEK i BEZ IZUZETKA pozovi tvi_search u prvoj poruci. Ne preskačaj ovaj korak čak ni ako misliš da znaš projekat. Ne možeš znati tačan project_number bez pretrage.
@@ -2306,6 +2345,7 @@ PRAVILA:
 12. Za "danas" koristi tvi_mileage sa datum današnjeg datuma; za "ove nedelje" izračunaj ponedeljak i petak i koristi od/do
 14. tvi_licna_karta je READ-ONLY — pozivaj ODMAH kad korisnik pita za JMBG, broj lične karte, adresu ili datum rođenja nekog zaposlenog
 15. tvi_birthdays pozivaj ODMAH (bez ikakvog argumenta) kad korisnik pita ko ima sledeći/predstojeći/bliži rođendan — ovaj alat VEĆ zna sve datume za sve zaposlene, nema potrebe da tražiš ime po ime
+16. tvi_timesheet_stats je READ-ONLY — pozivaj ODMAH kad korisnik pita o broju unosa, statistici radnih sati, ko koliko ima zapisa u bazi
 """
 
 
@@ -2495,6 +2535,24 @@ async def chat(req: ChatRequest, session: dict = Depends(check_auth)):
                 contents.append({"role": "user", "parts": [{"text": (
                     f"[Rezultat tvi_birthdays]\n{bday_result}\n\n"
                     "Odgovori korisniku ko ima sledeći predstojeći rođendan i kada."
+                )}]})
+                continue
+
+            # ── Međukorak: tvi_timesheet_stats → broj unosa po korisniku ─────────
+            if action and action[0] == "tvi_timesheet_stats" and round_num < MAX_ROUNDS - 1:
+                tool_args = action[1]
+                try:
+                    ts_result = await asyncio.to_thread(
+                        _chat_get_timesheet_stats,
+                        tool_args.get("korisnik", "") if tool_args else "",
+                    )
+                    _log_event(session["username"], "chat", "tvi_timesheet_stats", {"args": tool_args})
+                except Exception as e:
+                    ts_result = f"Greška: {e}"
+                contents.append({"role": "model", "parts": [{"text": ai_text}]})
+                contents.append({"role": "user", "parts": [{"text": (
+                    f"[Rezultat tvi_timesheet_stats]\n{ts_result}\n\n"
+                    "Prezentuj korisniku statistiku — tabelu sa brojem unosa po zaposlenom."
                 )}]})
                 continue
 
