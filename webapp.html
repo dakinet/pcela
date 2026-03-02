@@ -834,9 +834,11 @@
                    onchange="pickLogDate('do',this.value)">
           </div>
         </div>
-        <button class="btn-primary" style="height:34px;padding:0 .75rem;flex-shrink:0" onclick="loadLogs()">Osveži</button>
       </div>
-      <div id="log-summary" style="font-size:.75rem;color:#6b7280"></div>
+      <div style="display:flex;align-items:center;gap:.5rem;margin-top:.4rem">
+        <button class="btn-primary" style="height:34px;padding:0 1rem" onclick="loadLogs()">Osveži</button>
+        <div id="log-summary" style="font-size:.75rem;color:#6b7280"></div>
+      </div>
     </div>
     <div id="log-entries"></div>
 
