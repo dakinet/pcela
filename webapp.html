@@ -4,7 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Pčela – Evidencija radnog vremena</title>
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🐝</text></svg>">
+  <link rel="icon" href="/favicon.ico" type="image/x-icon">
+  <link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: system-ui, -apple-system, sans-serif; background: #f0f4f8; color: #1a202c; min-height: 100vh; }
@@ -16,8 +17,9 @@
     .header .api-url { font-size: .7rem; color: rgba(255,255,255,.4); }
 
     /* ── Bee logo + bubble ── */
-    .bee-logo-wrap { display: flex; align-items: center; cursor: pointer; user-select: none; gap: 0; }
+    .bee-logo-wrap { display: flex; align-items: center; cursor: pointer; user-select: none; gap: 0.4rem; }
     .bee-logo-wrap:hover h1 span { color: #93c5fd; }
+    .bee-logo-img { height: 32px; width: auto; display: block; flex-shrink: 0; }
     .bee-bubble {
       position: relative;
       margin-left: 14px;
@@ -296,8 +298,9 @@
     /* ── Login overlay ── */
     .login-overlay { position: fixed; inset: 0; background: rgba(15,23,42,.88); z-index: 9999; display: flex; align-items: center; justify-content: center; }
     .login-card { background: #fff; border-radius: 16px; padding: 2rem 1.75rem; width: min(380px, 92vw); box-shadow: 0 20px 60px rgba(0,0,0,.35); }
-    .login-title { font-size: 1.6rem; font-weight: 800; color: #1e3a5f; text-align: center; margin-bottom: .25rem; }
+    .login-title { font-size: 1.6rem; font-weight: 800; color: #1e3a5f; text-align: center; margin-bottom: .25rem; display: flex; align-items: center; justify-content: center; gap: .5rem; }
     .login-title span { color: #2563eb; }
+    .login-logo { height: 40px; width: auto; }
     .login-sub { font-size: .8rem; color: #9ca3af; text-align: center; margin-bottom: 1.5rem; }
     .login-err { background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; border-radius: 8px; padding: .5rem .75rem; font-size: .82rem; margin-bottom: .75rem; }
 
@@ -305,7 +308,8 @@
     .chat-outer { position: relative; height: calc(100dvh - 145px); overflow: hidden; }
     .chat-wrap { display: flex; flex-direction: column; height: 100%; }
     .chat-topbar { display: flex; align-items: center; justify-content: space-between; padding: .45rem .75rem; border-bottom: 1px solid #f1f5f9; background: #fff; flex-shrink: 0; }
-    .chat-topbar-title { font-weight: 700; color: #1e3a5f; font-size: .88rem; }
+    .chat-topbar-title { font-weight: 700; color: #1e3a5f; font-size: .88rem; display: flex; align-items: center; gap: .35rem; }
+    .chat-topbar-title .bee-mini { height: 20px; width: auto; }
     .chat-top-btn { background: none; border: 1px solid #e5e7eb; border-radius: 8px; width: 32px; height: 32px; cursor: pointer; font-size: .88rem; display: inline-flex; align-items: center; justify-content: center; transition: background .12s; }
     .chat-top-btn:hover { background: #f3f4f6; }
     .chat-sidebar { position: absolute; top: 0; right: 0; width: 72%; max-width: 290px; height: 100%; background: #fff; border-left: 1px solid #e5e7eb; z-index: 50; display: flex; flex-direction: column; box-shadow: -6px 0 24px rgba(0,0,0,.13); transform: translateX(0); transition: transform .22s ease; }
@@ -449,7 +453,7 @@
 <!-- Login overlay -->
 <div id="login-overlay" class="login-overlay">
   <div class="login-card">
-    <div class="login-title">🐝 <span>Pčela</span></div>
+    <div class="login-title"><img src="/static/logo.png" alt="" class="login-logo"> <span>Pčela</span></div>
     <div class="login-sub">Prijavite se da biste nastavili</div>
     <div class="form-group" style="margin-bottom:.8rem">
       <label class="form-lbl">Korisničko ime</label>
@@ -489,7 +493,8 @@
 <!-- Header -->
 <div class="header">
   <div class="bee-logo-wrap" onclick="switchTab('chat')" title="Otvori chat sa Pčelom">
-    <h1>🐝 <span>Pčela</span></h1>
+    <img src="/static/logo.png" alt="" class="bee-logo-img">
+    <h1><span>Pčela</span></h1>
     <div class="bee-bubble">Četuj sa mnom!</div>
   </div>
   <div class="header-right">
@@ -727,7 +732,7 @@
     <div class="chat-outer">
       <div class="chat-wrap">
         <div class="chat-topbar">
-          <span class="chat-topbar-title">🐝 Pčela AI</span>
+          <span class="chat-topbar-title"><img src="/static/logo.png" alt="" class="bee-mini"> Pčela AI</span>
           <div style="display:flex;gap:.35rem">
             <button class="chat-top-btn" onclick="newChatConv()" title="Nova konverzacija">✏️</button>
             <button class="chat-top-btn" onclick="toggleChatSidebar()" title="Istorija razgovora">🕐</button>
@@ -864,7 +869,7 @@
 // Config
 // ────────────────────────────────────────────────────────────────────────────
 const API = window.location.origin.includes('127.0.0.1') || window.location.protocol === 'file:'
-  ? 'https://altered-lay-wheat-economics.trycloudflare.com'
+  ? 'https://pcela.tvi.rs'
   : window.location.origin;
 
 // ────────────────────────────────────────────────────────────────────────────

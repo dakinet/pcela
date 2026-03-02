@@ -31,6 +31,7 @@ from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.staticfiles import StaticFiles
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from pydantic import BaseModel
 
@@ -66,6 +67,20 @@ app.add_middleware(
 )
 
 security = HTTPBasic(auto_error=False)
+
+# Static fajlovi (favicon, logo)
+STATIC_DIR = BASE_DIR / "static"
+if STATIC_DIR.exists():
+    app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+
+
+@app.get("/favicon.ico", response_class=FileResponse)
+async def favicon():
+    """Favicon za sajt (pčelica)."""
+    path = STATIC_DIR / "favicon.ico"
+    if not path.exists():
+        raise HTTPException(status_code=404)
+    return FileResponse(path, media_type="image/x-icon")
 
 # ── Logging ───────────────────────────────────────────────────────────────────
 
@@ -299,6 +314,30 @@ def _record_to_dict(r: dict) -> dict:
         "comment": r.get("comment") or "",
         "total": round(r["total"]),
     }
+
+
+def _is_other_user_project(proj_name: str, current_full_name: str) -> bool:
+    """
+    Vraća True ako naziv projekta počinje imenom i prezimenom DRUGOG korisnika.
+    Prepoznaje šablon "Ime Prezime ..." — oba slova počinju velikim slovom,
+    oba su isključivo slova (uključujući srpska), dužina > 2.
+    Koristi se za sprečavanje upisa i prikaza tuđih personalnih projekata.
+    """
+    def _norm(s: str) -> str:
+        return ''.join(
+            c for c in unicodedata.normalize('NFD', s.lower())
+            if unicodedata.category(c) != 'Mn'
+        )
+    words = proj_name.split()
+    if len(words) < 2:
+        return False
+    w1, w2 = words[0], words[1]
+    if (w1 and w2
+            and w1[0].isupper() and w2[0].isupper()
+            and w1.replace('-', '').isalpha() and w2.replace('-', '').isalpha()
+            and len(w1) > 2 and len(w2) > 2):
+        return _norm(f"{w1} {w2}") != _norm(current_full_name)
+    return False
 
 
 # ── Request modeli ─────────────────────────────────────────────────────────────
@@ -867,6 +906,8 @@ async def status(
                 raise ValueError(f"Nevazan format datuma: '{datum}'. Koristiti DD.MM.YYYY.")
         s_ms, e_ms = _day_bounds(today)
         records = _fetch_records(user_id, user_name, s_ms, e_ms, session)
+        records = [r for r in records
+                   if not _is_other_user_project(r.get("requestName", ""), user_name)]
         result = {
             "datum": today.strftime("%d.%m.%Y"),
             "dan": WEEKDAYS[today.weekday()],
@@ -915,6 +956,8 @@ async def day_with_ids(
 
         # Brzo: history podaci
         records = _fetch_records(user_id, user_name, s_ms, e_ms, session)
+        records = [r for r in records
+                   if not _is_other_user_project(r.get("requestName", ""), user_name)]
 
         # Sporo: IDs iz subscription-a
         ddp = _connect_login(session)
@@ -981,6 +1024,11 @@ async def log(req: LogRequest, request: Request, session: dict = Depends(check_a
             proj = _lookup_project_db(req.project_number)
             if proj:
                 activities_id, requests_id, proj_name = proj
+                if _is_other_user_project(proj_name, user_name):
+                    raise ValueError(
+                        f"Nije dozvoljeno upisivati vreme na projekat '{proj_name[:50]}' "
+                        f"koji pripada drugom korisniku."
+                    )
                 project_info = f"#{req.project_number} {proj_name[:40]}"
             else:
                 project_info = f"#{req.project_number} (nije nadjen u bazi, koristim podrazumevani)"
@@ -1191,6 +1239,8 @@ async def history(
             raise ValueError("Nevazan format datuma. Koristiti DD.MM.YYYY.")
 
         records = _fetch_records(user_id, user_name, s_ms, e_ms, session)
+        records = [r for r in records
+                   if not _is_other_user_project(r.get("requestName", ""), user_name)]
 
         by_day: dict[date, list] = {}
         for r in records:
@@ -1282,6 +1332,7 @@ async def search(
             years = re.findall(r'\b(20\d\d)\b', name)
             return bool(years) and current_year not in years
         rows = [r for r in rows if not _wrong_year(r[1])]
+        rows = [r for r in rows if not _is_other_user_project(r[1], session["full_name"])]
         conn.close()
 
         projects = [
