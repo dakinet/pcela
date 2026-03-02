@@ -2073,12 +2073,18 @@ async function openKmForm() {
     _kmDefaultProjects = d.km_projects || [];
   } catch { _kmCars = []; _kmMyCarId = null; _kmDefaultProjects = []; }
 
-  // Resetuj car search
+  // Resetuj polja PRVO — pre auto-selecta auta
   document.getElementById('km-car-search').value = '';
   document.getElementById('km-car').value = '';
   document.getElementById('km-car-results').classList.add('hidden');
+  document.getElementById('km-proj-input').value = '';
+  document.getElementById('km-start').value = '';
+  document.getElementById('km-end').value = '';
+  document.getElementById('km-summary').style.display = 'none';
+  document.getElementById('km-car-info').classList.add('hidden');
+  document.getElementById('btn-km-save').disabled = true;
 
-  // Auto-select korisnikov auto
+  // Auto-select korisnikov auto (mora biti POSLE reseta, da bi onKmCarChange postavio km-start)
   if (_kmMyCarId) {
     selectKmCar(_kmMyCarId);
   }
@@ -2101,15 +2107,6 @@ async function openKmForm() {
     document.getElementById('km-proj-wrap').classList.remove('hidden');
     document.getElementById('km-proj-selected').classList.add('hidden');
   }
-
-  document.getElementById('km-proj-input').value = '';
-  document.getElementById('km-start').value = '';
-  document.getElementById('km-end').value = '';
-  document.getElementById('km-summary').style.display = 'none';
-  document.getElementById('km-car-info').classList.add('hidden');
-  document.getElementById('btn-km-save').disabled = true;
-
-  // Ako je auto auto-izabran, onKmCarChange je već pozvan u selectKmCar
 }
 
 function selectKmQuickProj(idx) {
@@ -2121,6 +2118,10 @@ function selectKmQuickProj(idx) {
 function closeKmForm() {
   document.getElementById('km-card').classList.add('hidden');
   document.querySelector('.action-row').classList.remove('hidden');
+}
+
+function _kmCarLabel(c) {
+  return `${c.name} (${c.unitPrice} din/km)`;
 }
 
 function onKmCarSearch(v) {
@@ -2135,7 +2136,7 @@ function onKmCarSearch(v) {
     return;
   }
   res.innerHTML = filtered.map(c =>
-    `<div class="proj-result-item" onclick="selectKmCar('${esc(c._id)}')">${esc(c.name)}</div>`
+    `<div class="proj-result-item" onclick="selectKmCar('${esc(c._id)}')">${esc(_kmCarLabel(c))}</div>`
   ).join('');
   res.classList.remove('hidden');
 }
@@ -2144,7 +2145,7 @@ function selectKmCar(carId) {
   const car = _kmCars.find(c => c._id === carId);
   if (!car) return;
   document.getElementById('km-car').value = carId;
-  document.getElementById('km-car-search').value = car.name;
+  document.getElementById('km-car-search').value = _kmCarLabel(car);
   document.getElementById('km-car-results').classList.add('hidden');
   onKmCarChange();
 }
