@@ -3203,8 +3203,10 @@ async def me(session: dict = Depends(check_auth)):
 async def admin_logs(
     n:      int = Query(default=200, description="Broj poslednjih unosa"),
     user:   str = Query(default="",  description="Filter po korisniku"),
-    action: str = Query(default="",  description="Filter po akciji (log, parse-voice, delete, auth)"),
-    datum:  str = Query(default="",  description="Filter po datumu DD.MM.YYYY ili YYYY-MM-DD"),
+    action: str = Query(default="",  description="Filter po akciji"),
+    datum:  str = Query(default="",  description="Filter po datumu DD.MM.YYYY (tačan dan)"),
+    od:     str = Query(default="",  description="Od datuma DD.MM.YYYY"),
+    do:     str = Query(default="",  description="Do datuma DD.MM.YYYY"),
     session: dict = Depends(check_auth),
 ):
     """Čita poslednjih N log unosa. Samo za master korisnika."""
@@ -3230,16 +3232,19 @@ async def admin_logs(
             continue
         if action and e.get("action", "") != action:
             continue
-        if datum:
-            # podrzava DD.MM.YYYY i YYYY-MM-DD
+        if datum or od or do:
             ts = e.get("ts", "")[:10]  # "YYYY-MM-DD"
+            def _to_iso(s: str) -> str:
+                if "." in s:
+                    dd, mm, yy = s.split(".")
+                    return f"{yy}-{mm.zfill(2)}-{dd.zfill(2)}"
+                return s
             try:
-                if "." in datum:
-                    d, m, y = datum.split(".")
-                    filter_date = f"{y}-{m.zfill(2)}-{d.zfill(2)}"
-                else:
-                    filter_date = datum
-                if ts != filter_date:
+                if datum and ts != _to_iso(datum):
+                    continue
+                if od and ts < _to_iso(od):
+                    continue
+                if do and ts > _to_iso(do):
                     continue
             except Exception:
                 pass
