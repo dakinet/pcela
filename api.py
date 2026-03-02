@@ -1807,10 +1807,9 @@ def _auto_sync_run() -> None:
     except Exception as e:
         _log_event("system", "localhost", "auto-sync-cars",
                    {"error": str(e)}, status="error")
-    # Inkrementalni sync radnog vremena — poslednih 35 dana
+    # Sync kompletne istorije radnog vremena za svakog korisnika
     try:
-        od_inc = (date.today() - timedelta(days=35)).strftime("%d.%m.%Y")
-        ts_result = _sync_timesheets_blocking(od=od_inc)
+        ts_result = _sync_timesheets_blocking()
         _log_event("system", "localhost", "auto-sync-timesheets",
                    {"records": ts_result["total_records"], "users": ts_result["synced_users"]})
     except Exception as e:
