@@ -585,7 +585,10 @@
                  placeholder="Pretraži po tablici ili imenu…"
                  autocomplete="off"
                  oninput="onKmCarSearch(this.value)"
-                 onfocus="onKmCarSearch(this.value)">
+                 onfocus="onKmCarSearch(this.value)"
+                 style="padding-right:2rem">
+          <button class="proj-clear hidden" id="km-car-clear" onclick="clearKmCar()"
+                  title="Obriši" style="position:absolute;right:.5rem;top:50%;transform:translateY(-50%);z-index:2">✕</button>
           <div class="proj-results hidden" id="km-car-results"></div>
         </div>
         <input type="hidden" id="km-car">
@@ -2077,6 +2080,7 @@ async function openKmForm() {
   document.getElementById('km-car-search').value = '';
   document.getElementById('km-car').value = '';
   document.getElementById('km-car-results').classList.add('hidden');
+  document.getElementById('km-car-clear').classList.add('hidden');
   document.getElementById('km-proj-input').value = '';
   document.getElementById('km-start').value = '';
   document.getElementById('km-end').value = '';
@@ -2147,7 +2151,17 @@ function selectKmCar(carId) {
   document.getElementById('km-car').value = carId;
   document.getElementById('km-car-search').value = _kmCarLabel(car);
   document.getElementById('km-car-results').classList.add('hidden');
+  document.getElementById('km-car-clear').classList.remove('hidden');
   onKmCarChange();
+}
+
+function clearKmCar() {
+  document.getElementById('km-car').value = '';
+  document.getElementById('km-car-search').value = '';
+  document.getElementById('km-car-clear').classList.add('hidden');
+  document.getElementById('km-car-info').classList.add('hidden');
+  document.getElementById('km-start').value = '';
+  calcKm();
 }
 
 async function onKmCarChange() {
