@@ -1,6 +1,7 @@
 # Kredencijali i lokalna konfiguracija
 .env
 accounts.csv
+deploy/.env
 
 # Python cache
 __pycache__/

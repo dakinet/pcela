@@ -15,6 +15,7 @@ Alati (tools):
 
 import asyncio
 import calendar
+import contextvars
 import csv
 import os
 import sqlite3
@@ -56,6 +57,22 @@ def _env(key: str) -> str:
     if not val:
         raise RuntimeError(f"Nedostaje '{key}' u .env fajlu.")
     return val
+
+
+# Session kontekst — kada se poziva iz web app-a (api.py), ovde se upisuju
+# kredencijali ulogovanog korisnika. Kada se poziva kao MCP server (Claude Code),
+# ostaje None i koristi se .env fallback.
+_session_ctx: contextvars.ContextVar[dict | None] = contextvars.ContextVar(
+    'tvi_session', default=None
+)
+
+
+def _get_creds() -> tuple[str, str, str]:
+    """Vraća (username, password, user_id) iz session konteksta ili .env fallback."""
+    session = _session_ctx.get()
+    if session:
+        return session["username"], session["password"], session["user_id"]
+    return _env("USERNAME"), _env("PASSWORD"), _env("USER_ID")
 
 
 def _ms_to_str(ms: int) -> str:
@@ -117,8 +134,7 @@ def _connect_login(username: str, password: str) -> MeteorDDP:
 
 def _fetch_records(user_id: str, user_name: str,
                    start_ms: int, end_ms: int) -> list[dict]:
-    username = _env("USERNAME")
-    password = _env("PASSWORD")
+    username, password, _ = _get_creds()
     ddp = _connect_login(username, password)
     result = ddp.get_history(user_id=user_id, user_name=user_name,
                              start_ms=start_ms, end_ms=end_ms)
@@ -183,8 +199,7 @@ async def tvi_status(datum: str = "") -> str:
         datum: Datum u formatu DD.MM.YYYY. Ako je prazan, koristi se danas.
     """
     def _run():
-        user_id   = _env("USER_ID")
-        username  = _env("USERNAME")
+        username, _, user_id = _get_creds()
         user_name = _get_full_name(username)
         today = date.today()
         if datum:
@@ -217,8 +232,8 @@ async def tvi_status_month() -> str:
     i listu datuma koji nedostaju (bez unosa). Pogodno za glasovnu povratnu informaciju.
     """
     def _run():
-        user_id   = _env("USER_ID")
-        user_name = _get_full_name(_env("USERNAME"))
+        username, _, user_id = _get_creds()
+        user_name = _get_full_name(username)
         today = date.today()
         year, month = today.year, today.month
         last_day = calendar.monthrange(year, month)[1]
@@ -282,9 +297,7 @@ async def tvi_log(
         datum: Datum u formatu DD.MM.YYYY. Ako je prazan, koristi se danas.
     """
     def _run():
-        username  = _env("USERNAME")
-        password  = _env("PASSWORD")
-        user_id   = _env("USER_ID")
+        username, password, user_id = _get_creds()
         price_h   = int(_env("PRICE_PER_HOUR"))
         def_act   = _env("DEFAULT_ACTIVITIES_ID")
         def_req   = _env("DEFAULT_REQUESTS_ID")
@@ -391,8 +404,7 @@ async def tvi_delete(record_id: str) -> str:
         record_id: Hex ID zapisa (npr. '58a0cf98d63783d0828d1d8e').
     """
     def _run():
-        username = _env("USERNAME")
-        password = _env("PASSWORD")
+        username, password, _ = _get_creds()
         ddp = _connect_login(username, password)
         result = ddp.remove_request_time(record_id)
         ddp.close()
@@ -422,9 +434,7 @@ async def tvi_delete_after(start_time: str, datum: str = "") -> str:
         datum: Datum u formatu DD.MM.YYYY. Ako je prazan, koristi se danas.
     """
     def _run():
-        username = _env("USERNAME")
-        password = _env("PASSWORD")
-        user_id  = _env("USER_ID")
+        username, password, user_id = _get_creds()
         if datum:
             try:
                 day = _parse_date(datum)
@@ -475,9 +485,7 @@ async def tvi_delete_day(datum: str = "") -> str:
         datum: Datum u formatu DD.MM.YYYY. Ako je prazan, koristi se danas.
     """
     def _run():
-        username = _env("USERNAME")
-        password = _env("PASSWORD")
-        user_id  = _env("USER_ID")
+        username, password, user_id = _get_creds()
         if datum:
             try:
                 day = _parse_date(datum)
@@ -523,8 +531,7 @@ async def tvi_history(od: str = "", do: str = "") -> str:
         do: Kraj perioda u formatu DD.MM.YYYY. Podrazumevano: danas.
     """
     def _run():
-        user_id   = _env("USER_ID")
-        username  = _env("USERNAME")
+        username, _, user_id = _get_creds()
         user_name = _get_full_name(username)
         try:
             s_ms, e_ms, sd, ed = _period_bounds(od, do)
@@ -774,8 +781,7 @@ async def tvi_sync() -> str:
     Potrebno pokrenuti jednom mesecno ili kad se dodaju novi projekti.
     """
     def _run():
-        username = _env("USERNAME")
-        password = _env("PASSWORD")
+        username, password, _ = _get_creds()
 
         PAGE_SIZE = 20
         PAUSE_SEC = 0.4

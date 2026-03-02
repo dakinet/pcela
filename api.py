@@ -41,6 +41,7 @@ from ddp_client import MeteorDDP
 
 # MCP alati u produkciji (isti kao tvi_mcp.py)
 try:
+    import tvi_mcp as _tvi_mcp_module
     from tvi_mcp import (
         tvi_status,
         tvi_status_month,
@@ -55,6 +56,7 @@ try:
     )
     _MCP_AVAILABLE = True
 except ImportError:
+    _tvi_mcp_module = None
     _MCP_AVAILABLE = False
 
 app = FastAPI(title="TVI API", version="1.0.0")
@@ -299,6 +301,29 @@ def _record_to_dict(r: dict) -> dict:
         "comment": r.get("comment") or "",
         "total": round(r["total"]),
     }
+
+
+def _is_other_user_project(proj_name: str, current_full_name: str) -> bool:
+    """
+    Vraća True ako naziv projekta počinje imenom i prezimenom DRUGOG korisnika.
+    Šablon "Ime Prezime": oba slova počinju velikim, oba su isključivo slova, dužina > 2.
+    Normalizuje dijakritike (Gmitrović == Gmitrovic).
+    """
+    def _norm(s: str) -> str:
+        return ''.join(
+            c for c in unicodedata.normalize('NFD', s.lower())
+            if unicodedata.category(c) != 'Mn'
+        )
+    words = proj_name.split()
+    if len(words) < 2:
+        return False
+    w1, w2 = words[0], words[1]
+    if (w1 and w2
+            and w1[0].isupper() and w2[0].isupper()
+            and w1.replace('-', '').isalpha() and w2.replace('-', '').isalpha()
+            and len(w1) > 2 and len(w2) > 2):
+        return _norm(f"{w1} {w2}") != _norm(current_full_name)
+    return False
 
 
 # ── Request modeli ─────────────────────────────────────────────────────────────
@@ -981,6 +1006,11 @@ async def log(req: LogRequest, request: Request, session: dict = Depends(check_a
             proj = _lookup_project_db(req.project_number)
             if proj:
                 activities_id, requests_id, proj_name = proj
+                if _is_other_user_project(proj_name, user_name):
+                    raise ValueError(
+                        f"Nije dozvoljeno upisivati vreme na projekat '{proj_name[:50]}' "
+                        f"koji pripada drugom korisniku."
+                    )
                 project_info = f"#{req.project_number} {proj_name[:40]}"
             else:
                 project_info = f"#{req.project_number} (nije nadjen u bazi, koristim podrazumevani)"
@@ -1282,6 +1312,7 @@ async def search(
             years = re.findall(r'\b(20\d\d)\b', name)
             return bool(years) and current_year not in years
         rows = [r for r in rows if not _wrong_year(r[1])]
+        rows = [r for r in rows if not _is_other_user_project(r[1], session["full_name"])]
         conn.close()
 
         projects = [
@@ -2252,6 +2283,7 @@ async def chat(req: ChatRequest, session: dict = Depends(check_auth)):
                 tool_name, tool_args = action
                 fn = tools_map.get(tool_name)
                 if fn:
+                    _ctx_token = _tvi_mcp_module._session_ctx.set(session)
                     try:
                         tool_result = await fn(**tool_args)
                         result_str = str(tool_result)
@@ -2260,6 +2292,8 @@ async def chat(req: ChatRequest, session: dict = Depends(check_auth)):
                     except Exception as e:
                         result_str = f"Greška: {e}"
                         clean_text += f"\n\n❌ {e}"
+                    finally:
+                        _tvi_mcp_module._session_ctx.reset(_ctx_token)
 
             return {"role": "assistant", "content": clean_text or "Žao mi je, nisam uspela da odgovorim. Pokušaj ponovo."}
 
@@ -2718,6 +2752,8 @@ async def mcp_invoke(req: MCPInvokeRequest, request: Request, session: dict = De
     # Loguj sve akcione alate (ne čitanje)
     _LOGGABLE_TOOLS = {"tvi_log", "tvi_delete", "tvi_delete_after", "tvi_delete_day", "tvi_sync"}
     ip = _get_client_ip(request)
+    # Postavi session kontekst da MCP funkcije koriste kredencijale ulogovanog korisnika
+    _ctx_token = _tvi_mcp_module._session_ctx.set(session)
     try:
         result = await fn(**args)
         if req.tool in _LOGGABLE_TOOLS:
@@ -2733,6 +2769,8 @@ async def mcp_invoke(req: MCPInvokeRequest, request: Request, session: dict = De
                 "error": str(e),
             }, status="error")
         return {"error": str(e), "result": None}
+    finally:
+        _tvi_mcp_module._session_ctx.reset(_ctx_token)
 
 
 @app.get("/api/me")
