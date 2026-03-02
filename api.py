@@ -363,24 +363,30 @@ def _record_to_dict(r: dict) -> dict:
 
 def _is_other_user_project(proj_name: str, current_full_name: str) -> bool:
     """
-    Vraća True ako naziv projekta počinje imenom i prezimenom DRUGOG korisnika.
-    Šablon "Ime Prezime": oba slova počinju velikim, oba su isključivo slova, dužina > 2.
-    Normalizuje dijakritike (Gmitrović == Gmitrovic).
+    Vraća True ako naziv projekta počinje imenom i prezimenom DRUGOG korisnika
+    koji postoji u accounts.csv. Samo stvarni zaposleni se filtriraju — sprečava
+    lažno filtriranje projekata kao što je 'DRŽAVNI ARHIV SRBIJE...'.
     """
     def _norm(s: str) -> str:
         return ''.join(
             c for c in unicodedata.normalize('NFD', s.lower())
             if unicodedata.category(c) != 'Mn'
         )
-    words = proj_name.split()
-    if len(words) < 2:
+    if not ACCOUNTS_CSV.exists():
         return False
-    w1, w2 = words[0], words[1]
-    if (w1 and w2
-            and w1[0].isupper() and w2[0].isupper()
-            and w1.replace('-', '').isalpha() and w2.replace('-', '').isalpha()
-            and len(w1) > 2 and len(w2) > 2):
-        return _norm(f"{w1} {w2}") != _norm(current_full_name)
+    norm_proj = _norm(proj_name)
+    norm_current = _norm(current_full_name)
+    with open(ACCOUNTS_CSV, encoding="utf-8", newline="") as f:
+        for row in csv.DictReader(f):
+            full = row.get("full_name", "").strip()
+            if not full:
+                continue
+            parts = full.split()
+            if len(parts) < 2:
+                continue
+            emp_norm = _norm(f"{parts[0]} {parts[1]}")
+            if norm_proj.startswith(emp_norm):
+                return emp_norm != norm_current
     return False
 
 
