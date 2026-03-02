@@ -254,8 +254,20 @@ def _get_full_name(username: str) -> str:
 
 
 def _connect_login(session: dict | None = None) -> MeteorDDP:
-    username = session["username"] if session else _env("USERNAME")
-    password = session["password"] if session else _env("PASSWORD")
+    if session:
+        username = session["username"]
+        password = session["password"]
+    else:
+        username = _env("USERNAME")
+        password = _env("PASSWORD")
+        if not username or not password:
+            # Fallback: prvi nalog iz accounts.csv (za auto-sync)
+            if ACCOUNTS_CSV.exists():
+                with open(ACCOUNTS_CSV, encoding="utf-8", newline="") as _f:
+                    _row = next(csv.DictReader(_f), None)
+                    if _row:
+                        username = _row["username"].strip()
+                        password = _row["password"].strip()
     ddp = MeteorDDP(_env("METEOR_WSS_URL"))
     if not ddp.connect():
         raise RuntimeError("Nije moguce povezati se na TVI server.")
@@ -1578,10 +1590,160 @@ def _sync_cars_blocking(session: dict | None = None) -> dict:
     return {"count": len(rows), "fetched_at": fetched_at}
 
 
+def _sync_timesheets_blocking(
+    od: str = "",
+    do: str = "",
+    progress_cb=None,
+) -> dict:
+    """Povlači radno vreme svih zaposlenih iz accounts.csv i čuva u SQLite.
+
+    od: Početak perioda DD.MM.YYYY (default: 01.01.2020)
+    do: Kraj perioda DD.MM.YYYY (default: danas)
+    progress_cb: opcionalna f(msg: dict) za real-time napredak
+    """
+    if not ACCOUNTS_CSV.exists():
+        raise RuntimeError(f"Fajl '{ACCOUNTS_CSV}' ne postoji.")
+    accounts = []
+    with open(ACCOUNTS_CSV, encoding="utf-8", newline="") as f:
+        for row in csv.DictReader(f):
+            accounts.append({
+                "username":       row["username"].strip(),
+                "password":       row["password"].strip(),
+                "user_id":        row["user_id"].strip(),
+                "full_name":      row["full_name"].strip(),
+                "price_per_hour": int(row.get("price_per_hour", "2300").strip() or "2300"),
+            })
+    if not accounts:
+        raise RuntimeError("accounts.csv je prazan.")
+
+    s_date = datetime.strptime(od, "%d.%m.%Y").date() if od else date(2020, 1, 1)
+    e_date = datetime.strptime(do, "%d.%m.%Y").date() if do else date.today()
+    s_ms = int(datetime(s_date.year, s_date.month, s_date.day).timestamp() * 1000)
+    e_ms = int(datetime(e_date.year, e_date.month, e_date.day, 23, 59, 59).timestamp() * 1000)
+
+    meteor_url = _env("METEOR_WSS_URL")
+    fetched_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    conn = sqlite3.connect(PROJECTS_DB)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS request_times (
+            id TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL,
+            user_name TEXT NOT NULL,
+            start_ms INTEGER,
+            end_ms INTEGER,
+            date_ms INTEGER,
+            hours REAL,
+            price_per_hour REAL,
+            total REAL,
+            comment TEXT,
+            project_name TEXT,
+            fetched_at TEXT
+        )
+    """)
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_rt_user ON request_times(user_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_rt_date ON request_times(date_ms)")
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS employees (
+            user_id TEXT PRIMARY KEY,
+            username TEXT,
+            full_name TEXT,
+            price_per_hour INTEGER,
+            last_synced_at TEXT
+        )
+    """)
+    conn.commit()
+
+    def _cb(msg: dict):
+        if progress_cb:
+            progress_cb(msg)
+
+    total_records = 0
+    synced_users = 0
+    errors = []
+
+    for i, acc in enumerate(accounts, 1):
+        _cb({"type": "user", "user": acc["full_name"], "n": i, "total": len(accounts)})
+        try:
+            ddp = MeteorDDP(meteor_url)
+            if not ddp.connect(timeout=15):
+                errors.append(f"{acc['full_name']}: konekcija nije uspela")
+                _cb({"type": "error", "user": acc["full_name"], "msg": "konekcija nije uspela"})
+                continue
+            if not ddp.login(acc["username"], acc["password"]):
+                ddp.close()
+                errors.append(f"{acc['full_name']}: prijava nije uspela")
+                _cb({"type": "error", "user": acc["full_name"], "msg": "prijava nije uspela"})
+                continue
+
+            result = ddp.get_history(
+                user_id=acc["user_id"],
+                user_name=acc["full_name"],
+                start_ms=s_ms,
+                end_ms=e_ms,
+            )
+            ddp.close()
+
+            recs = result["result"] if result and "result" in result and result["result"] else []
+
+            for r in recs:
+                raw_id = r.get("_id")
+                rec_id = raw_id.get("$value") if isinstance(raw_id, dict) else (str(raw_id) if raw_id else None)
+                if not rec_id:
+                    continue
+                st = r.get("startTime")
+                et = r.get("endTime")
+                dt = r.get("date")
+                conn.execute("""
+                    INSERT OR REPLACE INTO request_times
+                    (id, user_id, user_name, start_ms, end_ms, date_ms,
+                     hours, price_per_hour, total, comment, project_name, fetched_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (
+                    rec_id,
+                    acc["user_id"],
+                    acc["full_name"],
+                    st["$date"] if isinstance(st, dict) else 0,
+                    et["$date"] if isinstance(et, dict) else 0,
+                    dt["$date"] if isinstance(dt, dict) else 0,
+                    r.get("hours") or 0.0,
+                    r.get("pricePerHour") or acc["price_per_hour"],
+                    r.get("total") or 0.0,
+                    r.get("comment") or "",
+                    r.get("requestName") or "",
+                    fetched_at,
+                ))
+
+            conn.execute("""
+                INSERT OR REPLACE INTO employees (user_id, username, full_name, price_per_hour, last_synced_at)
+                VALUES (?, ?, ?, ?, ?)
+            """, (acc["user_id"], acc["username"], acc["full_name"], acc["price_per_hour"], fetched_at))
+            conn.commit()
+
+            total_records += len(recs)
+            synced_users += 1
+            _cb({"type": "done", "user": acc["full_name"], "records": len(recs)})
+
+        except Exception as e:
+            errors.append(f"{acc['full_name']}: {e}")
+            _cb({"type": "error", "user": acc["full_name"], "msg": str(e)})
+
+        time.sleep(0.5)
+
+    conn.close()
+    return {
+        "synced_users": synced_users,
+        "total_records": total_records,
+        "errors": errors,
+        "period": f"{s_date:%d.%m.%Y} — {e_date:%d.%m.%Y}",
+        "fetched_at": fetched_at,
+    }
+
+
 # ── Auto-sync scheduler (svake noći u 04:00) ─────────────────────────────────
 
 def _auto_sync_run() -> None:
-    """Pokreće sinhronizaciju projekata i automobila sa env kredencijalima."""
+    """Pokreće sinhronizaciju projekata, automobila i radnog vremena."""
     _log_event("system", "localhost", "auto-sync", {"detail": "pokretanje"})
     try:
         result = _sync_projects_blocking(session=None)
@@ -1595,6 +1757,15 @@ def _auto_sync_run() -> None:
                    {"count": cars_result["count"]})
     except Exception as e:
         _log_event("system", "localhost", "auto-sync-cars",
+                   {"error": str(e)}, status="error")
+    # Inkrementalni sync radnog vremena — poslednih 35 dana
+    try:
+        od_inc = (date.today() - timedelta(days=35)).strftime("%d.%m.%Y")
+        ts_result = _sync_timesheets_blocking(od=od_inc)
+        _log_event("system", "localhost", "auto-sync-timesheets",
+                   {"records": ts_result["total_records"], "users": ts_result["synced_users"]})
+    except Exception as e:
+        _log_event("system", "localhost", "auto-sync-timesheets",
                    {"error": str(e)}, status="error")
 
 
@@ -2420,6 +2591,129 @@ async def sync_cars(session: dict = Depends(check_auth)):
         return {"ok": True, **result}
     except Exception as e:
         raise HTTPException(500, f"Greška pri sync-u automobila: {e}")
+
+
+@app.post("/api/timesheets/sync")
+async def sync_timesheets(
+    od: str = "",
+    do: str = "",
+    session: dict = Depends(check_auth),
+):
+    """Povlači radno vreme svih zaposlenih (accounts.csv) u lokalnu bazu.
+
+    od/do: DD.MM.YYYY — default je od 01.01.2020 do danas (puni istorijat).
+    Samo admin može pokrenuti.
+    """
+    if session["username"] != MASTER_USER:
+        raise HTTPException(403, "Samo admin može pokrenuti sinhronizaciju.")
+
+    def _run():
+        return _sync_timesheets_blocking(od=od, do=do)
+
+    try:
+        result = await asyncio.to_thread(_run)
+        return {"ok": True, **result}
+    except Exception as e:
+        raise HTTPException(500, str(e))
+
+
+@app.get("/api/timesheets/sync/stream")
+async def sync_timesheets_stream(
+    od: str = "",
+    do: str = "",
+    session: dict = Depends(check_auth),
+):
+    """SSE stream za praćenje napretka sinhronizacije radnog vremena."""
+    if session["username"] != MASTER_USER:
+        raise HTTPException(403, "Samo admin.")
+
+    q: queue.Queue = queue.Queue()
+
+    def _cb(msg: dict):
+        q.put(msg)
+
+    def _run():
+        try:
+            result = _sync_timesheets_blocking(od=od, do=do, progress_cb=_cb)
+            q.put({"type": "finish", **result})
+        except Exception as e:
+            q.put({"type": "finish", "error": str(e)})
+
+    threading.Thread(target=_run, daemon=True).start()
+
+    async def _gen():
+        while True:
+            try:
+                msg = await asyncio.to_thread(q.get, True, 120)
+            except Exception:
+                break
+            yield f"data: {json.dumps(msg, ensure_ascii=False)}\n\n"
+            if msg.get("type") == "finish":
+                break
+
+    return StreamingResponse(
+        _gen(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@app.get("/api/timesheets")
+async def get_timesheets(
+    user_id: str = "",
+    od: str = "",
+    do: str = "",
+    session: dict = Depends(check_auth),
+):
+    """Čita radno vreme iz lokalne baze. Parametri: user_id, od, do (DD.MM.YYYY)."""
+    if not PROJECTS_DB.exists():
+        raise HTTPException(404, "Baza ne postoji — pokreni /api/timesheets/sync.")
+
+    conn = sqlite3.connect(PROJECTS_DB)
+    try:
+        # Proveri da li tabela postoji
+        tbl = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='request_times'"
+        ).fetchone()
+        if not tbl:
+            raise HTTPException(404, "Tabela request_times ne postoji — pokreni /api/timesheets/sync.")
+
+        where, params = [], []
+        if user_id:
+            where.append("user_id = ?"); params.append(user_id)
+        if od:
+            s_ms = int(datetime.strptime(od, "%d.%m.%Y").timestamp() * 1000)
+            where.append("date_ms >= ?"); params.append(s_ms)
+        if do:
+            e_ms = int(datetime.strptime(do, "%d.%m.%Y").replace(
+                hour=23, minute=59, second=59).timestamp() * 1000)
+            where.append("date_ms <= ?"); params.append(e_ms)
+
+        sql = "SELECT id, user_id, user_name, start_ms, end_ms, date_ms, hours, price_per_hour, total, comment, project_name FROM request_times"
+        if where:
+            sql += " WHERE " + " AND ".join(where)
+        sql += " ORDER BY date_ms, start_ms"
+
+        rows = conn.execute(sql, params).fetchall()
+        cols = ["id", "user_id", "user_name", "start_ms", "end_ms", "date_ms",
+                "hours", "price_per_hour", "total", "comment", "project_name"]
+        records = [dict(zip(cols, r)) for r in rows]
+
+        employees = conn.execute(
+            "SELECT user_id, full_name, price_per_hour, last_synced_at FROM employees ORDER BY full_name"
+        ).fetchall() if conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='employees'"
+        ).fetchone() else []
+
+    finally:
+        conn.close()
+
+    return {
+        "count": len(records),
+        "records": records,
+        "employees": [{"user_id": r[0], "full_name": r[1], "price_per_hour": r[2], "last_synced_at": r[3]}
+                      for r in employees],
+    }
 
 
 def _ensure_mileage_table():
