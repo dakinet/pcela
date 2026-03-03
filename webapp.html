@@ -2347,6 +2347,7 @@ async function submitKm() {
       toast(`${d.car}: ${d.amount} km = ${d.total} din`, 'ok');
       speak(`Upisano ${d.amount} kilometara, ukupno ${d.total} dinara.`);
       closeKmForm();
+      loadDayMileage();
     } else {
       toast(d.error || d.detail || 'Greška', 'err');
     }
