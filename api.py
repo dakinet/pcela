@@ -415,6 +415,7 @@ class MileageRequest(BaseModel):
     end_km: int
     activities_id: str
     requests_id: str
+    comment: str = ""
     date: str = ""  # DD.MM.YYYY, default danas
 
 
@@ -2694,6 +2695,28 @@ def _find_km_projects(full_name: str) -> list[dict]:
     return result
 
 
+@app.get("/api/domains")
+async def get_domains(session: dict = Depends(check_auth)):
+    """Povlači listu domena iz TVI-ja (Projektovanje, Izvođenje, ...). Korisno za dinamički izbor bez hardkodovanih SYNC_DOMAINS."""
+    ddp = _connect_login(session)
+    try:
+        docs = ddp.get_domains(timeout=15)
+        return {"domains": docs}
+    finally:
+        ddp.close()
+
+
+@app.get("/api/request-items")
+async def get_request_items(session: dict = Depends(check_auth)):
+    """Povlači stavke zahteva iz TVI-ja (materijalni troškovi, kilometraža). Može vratiti mnogo zapisa."""
+    ddp = _connect_login(session)
+    try:
+        docs = ddp.get_request_items(timeout=25)
+        return {"request_items": docs, "count": len(docs)}
+    finally:
+        ddp.close()
+
+
 @app.get("/api/cars")
 async def get_cars(session: dict = Depends(check_auth)):
     cars = _load_cars()
@@ -2854,10 +2877,17 @@ def _ensure_mileage_table():
             activities_id TEXT,
             requests_id TEXT,
             date TEXT,
-            created_at TEXT
+            created_at TEXT,
+            comment TEXT
         )
     """)
     conn.execute("CREATE INDEX IF NOT EXISTS idx_mileage_user_date ON mileage_log(username, date)")
+    # Migracija: dodaj comment kolonu ako ne postoji
+    try:
+        conn.execute("ALTER TABLE mileage_log ADD COLUMN comment TEXT")
+        conn.commit()
+    except Exception:
+        pass
     conn.commit()
     conn.close()
 
@@ -2865,17 +2895,18 @@ def _ensure_mileage_table():
 def _save_mileage_log(username: str, car_name: str, car_id: str,
                        start_km: int, end_km: int, amount: int,
                        unit_price: float, total: float, project_name: str,
-                       activities_id: str, requests_id: str, target_date: str):
+                       activities_id: str, requests_id: str, target_date: str,
+                       comment: str = ""):
     _ensure_mileage_table()
     conn = sqlite3.connect(PROJECTS_DB)
     conn.execute(
         "INSERT INTO mileage_log "
         "(username, car_id, car_name, start_km, end_km, amount, unit_price, total, "
-        " project_name, activities_id, requests_id, date, created_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        " project_name, activities_id, requests_id, date, created_at, comment) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (username, car_id, car_name, start_km, end_km, amount, unit_price, total,
          project_name, activities_id, requests_id, target_date,
-         datetime.now().strftime("%Y-%m-%d %H:%M:%S")),
+         datetime.now().strftime("%Y-%m-%d %H:%M:%S"), comment),
     )
     conn.commit()
     conn.close()
@@ -2887,7 +2918,7 @@ def _get_mileage_log(username: str, target_date: str) -> list[dict]:
     conn.row_factory = sqlite3.Row
     rows = conn.execute(
         "SELECT id, car_name, start_km, end_km, amount, unit_price, total, "
-        "project_name, created_at FROM mileage_log "
+        "project_name, created_at, comment FROM mileage_log "
         "WHERE username = ? AND date = ? ORDER BY created_at",
         (username, target_date),
     ).fetchall()
@@ -3033,6 +3064,7 @@ async def add_mileage(req: MileageRequest, request: Request, session: dict = Dep
             activities_id=req.activities_id,
             requests_id=req.requests_id,
             added_by_id=session["user_id"],
+            comment=req.comment or None,
         )
     finally:
         ddp.close()
@@ -3066,6 +3098,7 @@ async def add_mileage(req: MileageRequest, request: Request, session: dict = Dep
         activities_id=req.activities_id,
         requests_id=req.requests_id,
         target_date=date_str,
+        comment=req.comment,
     )
 
     ip = _get_client_ip(request)
@@ -3253,6 +3286,51 @@ async def admin_logs(
             break
 
     return {"entries": entries, "total": len(lines)}
+
+
+@app.get("/api/admin/db-diagnostic")
+async def admin_db_diagnostic(session: dict = Depends(check_auth)):
+    """Dijagnostika baze: tabele, broj redova, putanja. Samo master."""
+    if session["username"] != MASTER_USER:
+        raise HTTPException(status_code=403, detail="Pristup dozvoljen samo master korisniku.")
+    if not PROJECTS_DB.exists():
+        return {
+            "path": str(PROJECTS_DB),
+            "exists": False,
+            "tables": [],
+            "error": "Baza ne postoji.",
+        }
+    out = {
+        "path": str(PROJECTS_DB),
+        "exists": True,
+        "size_bytes": PROJECTS_DB.stat().st_size,
+        "tables": [],
+    }
+    conn = sqlite3.connect(PROJECTS_DB)
+    try:
+        tables = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name"
+        ).fetchall()
+        for (tname,) in tables:
+            n = conn.execute(f"SELECT COUNT(*) FROM [{tname}]").fetchone()[0]
+            out["tables"].append({"name": tname, "rows": n})
+    finally:
+        conn.close()
+    return out
+
+
+@app.get("/api/admin/db-backup", response_class=FileResponse)
+async def admin_db_backup(session: dict = Depends(check_auth)):
+    """Preuzimanje kopije baze (projects.db). Samo master. Za backup 'kod nas'."""
+    if session["username"] != MASTER_USER:
+        raise HTTPException(status_code=403, detail="Pristup dozvoljen samo master korisniku.")
+    if not PROJECTS_DB.exists():
+        raise HTTPException(status_code=404, detail="Baza ne postoji.")
+    return FileResponse(
+        PROJECTS_DB,
+        media_type="application/x-sqlite3",
+        filename="projects_backup.db",
+    )
 
 
 @app.get("/", response_class=FileResponse)

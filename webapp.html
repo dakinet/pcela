@@ -162,6 +162,7 @@
     .km-day-entry .km-e-range { color: #475569; margin-top: .15rem; }
     .km-day-entry .km-e-range b { color: #0c4a6e; }
     .km-day-entry .km-e-proj { color: #64748b; font-size: .78rem; margin-top: .1rem; }
+    .km-day-entry .km-e-comment { color: #9ca3af; font-size: .75rem; font-style: italic; margin-top: .1rem; }
     .km-day-total { display: flex; justify-content: flex-end; gap: 1rem;
                     font-size: .78rem; color: #0369a1; font-weight: 600;
                     padding: .15rem .2rem 0; }
@@ -623,6 +624,11 @@
       </div>
 
       <div class="km-summary" id="km-summary"></div>
+
+      <div class="form-group">
+        <label class="form-lbl">Komentar <span style="color:#9ca3af;font-weight:400">(opciono)</span></label>
+        <input type="text" class="form-input" id="km-comment" placeholder="npr. odlazak na teren…">
+      </div>
 
       <div class="form-btns">
         <button class="btn-secondary" onclick="closeKmForm()">Otkaži</button>
@@ -1840,6 +1846,7 @@ async function loadDayMileage() {
         <div class="km-e-car">${esc(e.car_name)}</div>
         <div class="km-e-range">${e.start_km.toLocaleString()} → ${e.end_km.toLocaleString()} km &nbsp;·&nbsp; <b>${e.amount} km</b> &nbsp;·&nbsp; <b>${e.total.toLocaleString()} din</b></div>
         ${projShort ? `<div class="km-e-proj">${projShort}</div>` : ''}
+        ${e.comment ? `<div class="km-e-comment"># ${esc(e.comment)}</div>` : ''}
       </div>`;
     });
     if (entries.length > 1) {
@@ -2155,6 +2162,7 @@ function selectKmQuickProj(idx) {
 function closeKmForm() {
   document.getElementById('km-card').classList.add('hidden');
   document.querySelector('.action-row').classList.remove('hidden');
+  document.getElementById('km-comment').value = '';
 }
 
 function _kmCarLabel(c) {
@@ -2314,6 +2322,8 @@ async function submitKm() {
   btn.disabled = true;
   btn.textContent = 'Snimam…';
 
+  const comment = document.getElementById('km-comment').value.trim();
+
   try {
     const d = await api('/api/mileage', {
       method: 'POST',
@@ -2325,6 +2335,7 @@ async function submitKm() {
         activities_id: _kmSelProj.activities_id,
         requests_id: _kmSelProj.requests_id,
         date: S.datum || '',
+        comment,
       }),
     });
 
