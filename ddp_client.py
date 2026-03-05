@@ -211,6 +211,47 @@ class MeteorDDP:
             {"$type": "oid", "$value": record_id}
         ])
 
+    def car_km_report(self, item_id: str, start_ms: int, end_ms: int):
+        """Povlači kompletnu km evidenciju automobila u periodu (sve aktivnosti, svi vozači)."""
+        return self.call("items.mapForExportWithMaterialStep", [{
+            "startDate": {"$date": start_ms},
+            "endDate":   {"$date": end_ms},
+            "itemId":    {"$type": "oid", "$value": item_id},
+        }], timeout=20.0)
+
+    def remove_request_item(self, record_id: str):
+        """Briše stavku zahteva (kilometraža/materijal) po request_item ID-u."""
+        return self.call("requests.removeRequestItem", [
+            {"$type": "oid", "$value": record_id}
+        ])
+
+    def get_request_items(self, activities_id: str | None = None, timeout: float = 12.0) -> list[dict]:
+        """Povlaci request_items dokumente (po aktivnosti ili globalno)."""
+        with self._lock:
+            self._sub_docs = []
+            self._sub_collecting = True
+
+        sub_id = self._next_id()
+        ev = threading.Event()
+        self._sub_pending[sub_id] = ev
+
+        params = []
+        if activities_id:
+            params = [{"activities_id": {"$type": "oid", "$value": activities_id}}]
+
+        self._send({"msg": "sub", "id": sub_id, "name": "request_items", "params": params})
+        ev.wait(timeout)
+        self._sub_pending.pop(sub_id, None)
+        try:
+            self._send({"msg": "unsub", "id": sub_id})
+        except Exception:
+            pass
+
+        with self._lock:
+            self._sub_collecting = False
+            docs = list(self._sub_docs)
+        return docs
+
     def search_activities_page(self, domain_code: str, name: str, page: int = 1, page_size: int = 20, timeout: float = 15.0) -> list[dict]:
         """Pretrazuje aktivne projekte - jedna stranica (za paginaciju).
 

@@ -415,8 +415,8 @@ class MileageRequest(BaseModel):
     end_km: int
     activities_id: str
     requests_id: str
+    date: str = ""     # DD.MM.YYYY, default danas
     comment: str = ""
-    date: str = ""  # DD.MM.YYYY, default danas
 
 
 class ChatMessage(BaseModel):
@@ -2861,10 +2861,12 @@ async def get_timesheets(
 
 
 def _ensure_mileage_table():
-    conn = sqlite3.connect(PROJECTS_DB)
+    conn = sqlite3.connect(PROJECTS_DB, timeout=30)
+    conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("""
         CREATE TABLE IF NOT EXISTS mileage_log (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
+            doc_id TEXT UNIQUE,
             username TEXT NOT NULL,
             car_id TEXT,
             car_name TEXT,
@@ -2882,12 +2884,13 @@ def _ensure_mileage_table():
         )
     """)
     conn.execute("CREATE INDEX IF NOT EXISTS idx_mileage_user_date ON mileage_log(username, date)")
-    # Migracija: dodaj comment kolonu ako ne postoji
-    try:
-        conn.execute("ALTER TABLE mileage_log ADD COLUMN comment TEXT")
-        conn.commit()
-    except Exception:
-        pass
+    # Migracija: dodaj kolone ako ne postoje (mora biti PRE indeksa koji ih koriste)
+    for col, coltype in [("doc_id", "TEXT"), ("comment", "TEXT")]:
+        try:
+            conn.execute(f"ALTER TABLE mileage_log ADD COLUMN {col} {coltype}")
+        except Exception:
+            pass
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_mileage_doc ON mileage_log(doc_id)")
     conn.commit()
     conn.close()
 
@@ -2896,28 +2899,41 @@ def _save_mileage_log(username: str, car_name: str, car_id: str,
                        start_km: int, end_km: int, amount: int,
                        unit_price: float, total: float, project_name: str,
                        activities_id: str, requests_id: str, target_date: str,
-                       comment: str = ""):
+                       doc_id: str | None = None, comment: str = ""):
     _ensure_mileage_table()
-    conn = sqlite3.connect(PROJECTS_DB)
-    conn.execute(
-        "INSERT INTO mileage_log "
-        "(username, car_id, car_name, start_km, end_km, amount, unit_price, total, "
-        " project_name, activities_id, requests_id, date, created_at, comment) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        (username, car_id, car_name, start_km, end_km, amount, unit_price, total,
-         project_name, activities_id, requests_id, target_date,
-         datetime.now().strftime("%Y-%m-%d %H:%M:%S"), comment),
-    )
+    conn = sqlite3.connect(PROJECTS_DB, timeout=30)
+    conn.execute("PRAGMA journal_mode=WAL")
+    if doc_id:
+        conn.execute(
+            "INSERT OR REPLACE INTO mileage_log "
+            "(doc_id, username, car_id, car_name, start_km, end_km, amount, unit_price, total, "
+            " project_name, activities_id, requests_id, date, created_at, comment) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (doc_id, username, car_id, car_name, start_km, end_km, amount, unit_price, total,
+             project_name, activities_id, requests_id, target_date,
+             datetime.now().strftime("%Y-%m-%d %H:%M:%S"), comment),
+        )
+    else:
+        conn.execute(
+            "INSERT INTO mileage_log "
+            "(username, car_id, car_name, start_km, end_km, amount, unit_price, total, "
+            " project_name, activities_id, requests_id, date, created_at, comment) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (username, car_id, car_name, start_km, end_km, amount, unit_price, total,
+             project_name, activities_id, requests_id, target_date,
+             datetime.now().strftime("%Y-%m-%d %H:%M:%S"), comment),
+        )
     conn.commit()
     conn.close()
 
 
 def _get_mileage_log(username: str, target_date: str) -> list[dict]:
     _ensure_mileage_table()
-    conn = sqlite3.connect(PROJECTS_DB)
+    conn = sqlite3.connect(PROJECTS_DB, timeout=30)
+    conn.execute("PRAGMA journal_mode=WAL")
     conn.row_factory = sqlite3.Row
     rows = conn.execute(
-        "SELECT id, car_name, start_km, end_km, amount, unit_price, total, "
+        "SELECT doc_id, car_name, start_km, end_km, amount, unit_price, total, "
         "project_name, created_at, comment FROM mileage_log "
         "WHERE username = ? AND date = ? ORDER BY created_at",
         (username, target_date),
@@ -2926,12 +2942,90 @@ def _get_mileage_log(username: str, target_date: str) -> list[dict]:
     return [dict(r) for r in rows]
 
 
+def _get_mileage_from_tvi(session: dict, target_date: date) -> list[dict]:
+    """Povlači km unose za korisnika i datum direktno iz TVI (MongoDB).
+    Upsertuje u lokalnu SQLite kao keš. Vraća listu dict-ova."""
+    username = session["username"]
+    user_id  = session["user_id"]
+    full_name = session.get("full_name", "")
+    date_str = target_date.strftime("%Y-%m-%d")
+
+    km_projs = _find_km_projects(full_name)
+    if not km_projs:
+        return []
+
+    day_start_ms = int(datetime(target_date.year, target_date.month, target_date.day, 0, 0).timestamp() * 1000)
+    day_end_ms   = int(datetime(target_date.year, target_date.month, target_date.day, 23, 59, 59).timestamp() * 1000)
+
+    ddp = _connect_login(session)
+    try:
+        entries: list[dict] = []
+        for proj in km_projs:
+            act_id = proj["activities_id"]
+            items = ddp.get_request_items(activities_id=act_id, timeout=12.0)
+            for item in items:
+                # Projekat je personalizovan po imenu — nema potrebe za user filterom
+                # (admin moze unositi za druge, ali to je rijedak slučaj)
+                item_date = item.get("date", {})
+                item_ms = item_date.get("$date", 0) if isinstance(item_date, dict) else 0
+                if not (day_start_ms <= item_ms <= day_end_ms):
+                    continue
+                car_obj = item.get("item", {})
+                car_id_raw = car_obj.get("_id", {})
+                car_id = car_id_raw.get("$value", "") if isinstance(car_id_raw, dict) else str(car_id_raw)
+                req_id_raw = item.get("requests_id", {})
+                req_id = req_id_raw.get("$value", "") if isinstance(req_id_raw, dict) else str(req_id_raw)
+                entries.append({
+                    "doc_id":       item["_id"],
+                    "car_name":     car_obj.get("name", ""),
+                    "car_id":       car_id,
+                    "start_km":     item.get("startKm", 0),
+                    "end_km":       item.get("endKm", 0),
+                    "amount":       item.get("amount", 0),
+                    "unit_price":   item.get("unitPrice", 0),
+                    "total":        round(item.get("total", 0), 2),
+                    "project_name": proj["name"],
+                    "activities_id": act_id,
+                    "requests_id":  req_id,
+                    "comment":      item.get("comment") or "",
+                    "created_at":   date_str,
+                })
+    finally:
+        ddp.close()
+
+    # Upsert u SQLite kao keš (by doc_id)
+    if entries:
+        _ensure_mileage_table()
+        conn = sqlite3.connect(PROJECTS_DB, timeout=30)
+        conn.execute("PRAGMA journal_mode=WAL")
+        # Obriši stare zapise za ovaj user+datum (koji možda nemaju doc_id)
+        conn.execute(
+            "DELETE FROM mileage_log WHERE username=? AND date=? AND doc_id IS NULL",
+            (username, date_str)
+        )
+        for e in entries:
+            conn.execute(
+                "INSERT OR REPLACE INTO mileage_log "
+                "(doc_id, username, car_id, car_name, start_km, end_km, amount, unit_price, total, "
+                " project_name, activities_id, requests_id, date, created_at, comment) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (e["doc_id"], username, e["car_id"], e["car_name"],
+                 e["start_km"], e["end_km"], e["amount"], e["unit_price"], e["total"],
+                 e["project_name"], e["activities_id"], e["requests_id"],
+                 date_str, datetime.now().strftime("%Y-%m-%d %H:%M:%S"), e["comment"]),
+            )
+        conn.commit()
+        conn.close()
+
+    return sorted(entries, key=lambda x: x.get("doc_id", ""))
+
+
 @app.get("/api/mileage")
 async def get_mileage(
     datum: str = Query(default="", description="DD.MM.YYYY, prazno = danas"),
     session: dict = Depends(check_auth),
 ):
-    """Vraća kilometraže za dan iz lokalne baze."""
+    """Vraća kilometraže za dan — uvek povlači iz TVI (MongoDB), SQLite kao fallback."""
     if datum:
         try:
             d = _parse_date(datum)
@@ -2939,11 +3033,19 @@ async def get_mileage(
             raise HTTPException(400, "Neispravan format datuma.")
     else:
         d = date.today()
-    date_str = d.strftime("%Y-%m-%d")
-    entries = _get_mileage_log(session["username"], date_str)
-    total_km = sum(e["amount"] for e in entries)
-    total_din = round(sum(e["total"] for e in entries), 2)
-    return {"entries": entries, "total_km": total_km, "total_din": total_din}
+
+    def _run():
+        try:
+            entries = _get_mileage_from_tvi(session, d)
+        except Exception:
+            # Fallback: lokalna SQLite keš
+            date_str = d.strftime("%Y-%m-%d")
+            entries = _get_mileage_log(session["username"], date_str)
+        total_km  = sum(e["amount"] for e in entries)
+        total_din = round(sum(e["total"] for e in entries), 2)
+        return {"entries": entries, "total_km": total_km, "total_din": total_din}
+
+    return await asyncio.to_thread(_run)
 
 
 @app.get("/api/mileage/last-km")
@@ -2951,16 +3053,84 @@ async def mileage_last_km(
     car_id: str = Query(..., description="ID automobila"),
     session: dict = Depends(check_auth),
 ):
-    """Vraća poslednju krajnju kilometražu za zadati auto i korisnika."""
+    """Vraća poslednju krajnju kilometražu za zadati auto (svi korisnici, iz SQLite keša)."""
     _ensure_mileage_table()
-    conn = sqlite3.connect(PROJECTS_DB)
+    conn = sqlite3.connect(PROJECTS_DB, timeout=30)
+    conn.execute("PRAGMA journal_mode=WAL")
     row = conn.execute(
-        "SELECT end_km FROM mileage_log WHERE username = ? AND car_id = ? "
-        "ORDER BY date DESC, id DESC LIMIT 1",
-        (session["username"], car_id),
+        "SELECT end_km FROM mileage_log WHERE car_id = ? "
+        "ORDER BY date DESC, end_km DESC, id DESC LIMIT 1",
+        (car_id,),
     ).fetchone()
     conn.close()
     return {"last_km": row[0] if row else None}
+
+
+@app.get("/api/mileage/car-report")
+async def mileage_car_report(
+    car_id: str = Query(..., description="MongoDB ObjectId automobila"),
+    od: str = Query(default="", description="DD.MM.YYYY"),
+    do: str = Query(default="", description="DD.MM.YYYY"),
+    session: dict = Depends(check_auth),
+):
+    """Kompletna km evidencija za automobil u periodu — svi vozači, sve aktivnosti."""
+    try:
+        _, _, sd, ed = _period_bounds(od, do)
+    except Exception:
+        raise HTTPException(400, "Neispravan format datuma.")
+
+    sd_ms = int(datetime(sd.year, sd.month, sd.day, 0, 0).timestamp() * 1000)
+    ed_ms = int(datetime(ed.year, ed.month, ed.day, 23, 59, 59).timestamp() * 1000)
+
+    def _run():
+        ddp = _connect_login(session)
+        try:
+            result = ddp.car_km_report(car_id, sd_ms, ed_ms)
+        finally:
+            ddp.close()
+        if not result or "result" not in result:
+            return {"steps": [], "total_km": 0, "total_din": 0.0,
+                    "od": sd.strftime("%d.%m.%Y"), "do": ed.strftime("%d.%m.%Y")}
+        raw_steps = result["result"].get("activitySteps", [])
+        steps = []
+        for s in sorted(raw_steps, key=lambda x: (x.get("date", {}).get("$date", 0)
+                                                   if isinstance(x.get("date"), dict) else 0)):
+            d_ms = s.get("date", {}).get("$date", 0) if isinstance(s.get("date"), dict) else 0
+            # Lokalno vreme (server je CET)
+            d_str = datetime.fromtimestamp(d_ms / 1000).strftime("%d.%m.%Y %H:%M") if d_ms else ""
+            def _n(v, default=0.0):
+                if isinstance(v, (int, float)):
+                    return float(v)
+                if isinstance(v, str):
+                    try:
+                        return float(v.replace(",", "."))
+                    except ValueError:
+                        pass
+                return default
+            amt = _n(s.get("amount"))
+            tot = _n(s.get("total"))
+            steps.append({
+                "car_name":       s.get("itemName", ""),
+                "start_km":       int(_n(s.get("startKm"))),
+                "end_km":         int(_n(s.get("endKm"))),
+                "amount":         amt,
+                "unit_price":     _n(s.get("unitPrice")),
+                "total":          round(tot, 2),
+                "date":           d_str,
+                "request_name":   s.get("requestName", ""),
+                "request_number": s.get("requestNumber", ""),
+                "added_by":       s.get("addedByName", ""),
+                "comment":        s.get("comment", ""),
+            })
+        return {
+            "steps":     steps,
+            "total_km":  sum(s["amount"] for s in steps),
+            "total_din": round(sum(s["total"] for s in steps), 2),
+            "od":        sd.strftime("%d.%m.%Y"),
+            "do":        ed.strftime("%d.%m.%Y"),
+        }
+
+    return await asyncio.to_thread(_run)
 
 
 @app.get("/api/mileage/history")
@@ -2969,57 +3139,124 @@ async def mileage_history(
     do: str = Query(default="", description="DD.MM.YYYY"),
     session: dict = Depends(check_auth),
 ):
-    """Vraća kilometraže za period, grupisane po danu."""
+    """Vraća kilometraže za period iz TVI (MongoDB), grupisane po danu."""
     try:
         _, _, sd, ed = _period_bounds(od, do)
     except Exception:
         raise HTTPException(400, "Neispravan format datuma.")
 
-    _ensure_mileage_table()
-    sd_str = sd.strftime("%Y-%m-%d")
-    ed_str = ed.strftime("%Y-%m-%d")
+    def _run():
+        username  = session["username"]
+        full_name = session.get("full_name", "")
+        sd_str    = sd.strftime("%Y-%m-%d")
+        ed_str    = ed.strftime("%Y-%m-%d")
 
-    conn = sqlite3.connect(PROJECTS_DB)
-    conn.row_factory = sqlite3.Row
-    rows = conn.execute(
-        "SELECT id, car_name, start_km, end_km, amount, unit_price, total, "
-        "project_name, date, created_at FROM mileage_log "
-        "WHERE username = ? AND date >= ? AND date <= ? ORDER BY date, created_at",
-        (session["username"], sd_str, ed_str),
-    ).fetchall()
-    conn.close()
+        # Pokušaj TVI fetch
+        all_entries: list[dict] = []
+        try:
+            km_projs = _find_km_projects(full_name)
+            if km_projs:
+                sd_ms = int(datetime(sd.year, sd.month, sd.day, 0, 0).timestamp() * 1000)
+                ed_ms = int(datetime(ed.year, ed.month, ed.day, 23, 59, 59).timestamp() * 1000)
+                ddp = _connect_login(session)
+                try:
+                    for proj in km_projs:
+                        items = ddp.get_request_items(activities_id=proj["activities_id"], timeout=15.0)
+                        for item in items:
+                            item_date = item.get("date", {})
+                            item_ms = item_date.get("$date", 0) if isinstance(item_date, dict) else 0
+                            if not (sd_ms <= item_ms <= ed_ms):
+                                continue
+                            car_obj = item.get("item", {})
+                            car_id_raw = car_obj.get("_id", {})
+                            car_id = car_id_raw.get("$value", "") if isinstance(car_id_raw, dict) else str(car_id_raw)
+                            req_id_raw = item.get("requests_id", {})
+                            req_id = req_id_raw.get("$value", "") if isinstance(req_id_raw, dict) else str(req_id_raw)
+                            item_day = datetime.utcfromtimestamp(item_ms / 1000).strftime("%Y-%m-%d")
+                            all_entries.append({
+                                "doc_id":        item["_id"],
+                                "car_name":      car_obj.get("name", ""),
+                                "car_id":        car_id,
+                                "start_km":      item.get("startKm", 0),
+                                "end_km":        item.get("endKm", 0),
+                                "amount":        item.get("amount", 0),
+                                "unit_price":    item.get("unitPrice", 0),
+                                "total":         round(item.get("total", 0), 2),
+                                "project_name":  proj["name"],
+                                "activities_id": proj["activities_id"],
+                                "requests_id":   req_id,
+                                "comment":       item.get("comment") or "",
+                                "date":          item_day,
+                                "created_at":    item_day,
+                            })
+                finally:
+                    ddp.close()
+                # Upsert keš
+                if all_entries:
+                    _ensure_mileage_table()
+                    conn = sqlite3.connect(PROJECTS_DB, timeout=30)
+                    conn.execute("PRAGMA journal_mode=WAL")
+                    for e in all_entries:
+                        conn.execute(
+                            "INSERT OR REPLACE INTO mileage_log "
+                            "(doc_id, username, car_id, car_name, start_km, end_km, amount, unit_price, total,"
+                            " project_name, activities_id, requests_id, date, created_at, comment)"
+                            " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                            (e["doc_id"], username, e["car_id"], e["car_name"],
+                             e["start_km"], e["end_km"], e["amount"], e["unit_price"], e["total"],
+                             e["project_name"], e["activities_id"], e["requests_id"],
+                             e["date"], datetime.now().strftime("%Y-%m-%d %H:%M:%S"), e["comment"]),
+                        )
+                    conn.commit()
+                    conn.close()
+        except Exception:
+            # Fallback: SQLite keš
+            _ensure_mileage_table()
+            conn = sqlite3.connect(PROJECTS_DB, timeout=30)
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                "SELECT doc_id, car_name, start_km, end_km, amount, unit_price, total,"
+                " project_name, date, created_at, comment FROM mileage_log"
+                " WHERE username=? AND date>=? AND date<=? ORDER BY date, created_at",
+                (username, sd_str, ed_str),
+            ).fetchall()
+            conn.close()
+            all_entries = [dict(r) for r in rows]
 
-    by_day: dict[str, list] = {}
-    for r in rows:
-        d_str = r["date"]
-        by_day.setdefault(d_str, []).append(dict(r))
+        # Grupiši po danu
+        by_day: dict[str, list] = {}
+        for e in all_entries:
+            by_day.setdefault(e["date"], []).append(e)
 
-    days = []
-    total_km = 0
-    total_din = 0.0
-    for day_str in sorted(by_day.keys()):
-        d = datetime.strptime(day_str, "%Y-%m-%d").date()
-        entries = by_day[day_str]
-        day_km = sum(e["amount"] for e in entries)
-        day_din = round(sum(e["total"] for e in entries), 2)
-        total_km += day_km
-        total_din += day_din
-        days.append({
-            "datum": d.strftime("%d.%m.%Y"),
-            "dan": WEEKDAYS[d.weekday()],
-            "entries": entries,
-            "total_km": day_km,
-            "total_din": day_din,
-        })
+        days = []
+        total_km = 0
+        total_din = 0.0
+        for day_str in sorted(by_day.keys()):
+            d = datetime.strptime(day_str, "%Y-%m-%d").date()
+            entries = sorted(by_day[day_str], key=lambda x: x.get("doc_id", ""))
+            day_km  = sum(e["amount"] for e in entries)
+            day_din = round(sum(e["total"] for e in entries), 2)
+            total_km  += day_km
+            total_din += day_din
+            days.append({
+                "datum":     d.strftime("%d.%m.%Y"),
+                "dan":       WEEKDAYS[d.weekday()],
+                "entries":   entries,
+                "total_km":  day_km,
+                "total_din": day_din,
+            })
 
-    return {
-        "od": sd.strftime("%d.%m.%Y"),
-        "do": ed.strftime("%d.%m.%Y"),
-        "days": days,
-        "total_km": total_km,
-        "total_din": round(total_din, 2),
-        "total_entries": len(rows),
-    }
+        return {
+            "od":           sd.strftime("%d.%m.%Y"),
+            "do":           ed.strftime("%d.%m.%Y"),
+            "days":         days,
+            "total_km":     total_km,
+            "total_din":    round(total_din, 2),
+            "total_entries": len(all_entries),
+        }
+
+    return await asyncio.to_thread(_run)
 
 
 @app.post("/api/mileage")
@@ -3052,6 +3289,17 @@ async def add_mileage(req: MileageRequest, request: Request, session: dict = Dep
         "_id": {"$type": "oid", "$value": car["_id"]},
     }
 
+    # Konstruiši added_by sa profilom da TVI prikaže ime u koloni "Uneo"
+    full_name = session.get("full_name", "")
+    name_parts = full_name.split(None, 1)
+    added_by_obj = {
+        "_id": session["user_id"],
+        "profile": {
+            "firstName": name_parts[0] if name_parts else "",
+            "lastName":  name_parts[1] if len(name_parts) > 1 else "",
+        },
+    }
+
     ddp = _connect_login(session)
     try:
         result = ddp.add_request_item(
@@ -3063,17 +3311,22 @@ async def add_mileage(req: MileageRequest, request: Request, session: dict = Dep
             end_km=req.end_km,
             activities_id=req.activities_id,
             requests_id=req.requests_id,
-            added_by_id=session["user_id"],
             comment=req.comment or None,
+            added_by=added_by_obj,
         )
     finally:
         ddp.close()
+
+    # Izvuci doc_id iz TVI odgovora
+    doc_id: str | None = None
+    if result and isinstance(result.get("result"), str):
+        doc_id = result["result"]
 
     # Pronađi naziv projekta za log
     proj_name = ""
     if PROJECTS_DB.exists():
         try:
-            conn = sqlite3.connect(PROJECTS_DB)
+            conn = sqlite3.connect(PROJECTS_DB, timeout=30)
             row = conn.execute(
                 "SELECT name FROM projects WHERE id = ?", (req.activities_id,)
             ).fetchone()
@@ -3083,7 +3336,7 @@ async def add_mileage(req: MileageRequest, request: Request, session: dict = Dep
         except Exception:
             pass
 
-    # Sačuvaj u lokalnu bazu za pregled
+    # Sačuvaj u lokalnu bazu za pregled (sa doc_id i comment)
     date_str = target_date.strftime("%Y-%m-%d")
     _save_mileage_log(
         username=session["username"],
@@ -3098,7 +3351,8 @@ async def add_mileage(req: MileageRequest, request: Request, session: dict = Dep
         activities_id=req.activities_id,
         requests_id=req.requests_id,
         target_date=date_str,
-        comment=req.comment,
+        doc_id=doc_id,
+        comment=req.comment or "",
     )
 
     ip = _get_client_ip(request)
@@ -3109,6 +3363,7 @@ async def add_mileage(req: MileageRequest, request: Request, session: dict = Dep
         "amount": amount,
         "total": round(amount * unit_price, 2),
         "activities_id": req.activities_id,
+        "comment": req.comment or "",
     })
 
     return {
@@ -3117,7 +3372,137 @@ async def add_mileage(req: MileageRequest, request: Request, session: dict = Dep
         "amount": amount,
         "total": round(amount * unit_price, 2),
         "unit_price": unit_price,
+        "doc_id": doc_id,
     }
+
+
+@app.delete("/api/mileage/{doc_id}")
+async def delete_mileage(doc_id: str, request: Request, session: dict = Depends(check_auth)):
+    """Briše km unos iz TVI (MongoDB) i lokalnog keša."""
+    def _run():
+        ddp = _connect_login(session)
+        try:
+            ddp.remove_request_item(doc_id)
+        finally:
+            ddp.close()
+        # Obriši iz lokalnog keša
+        try:
+            _ensure_mileage_table()
+            conn = sqlite3.connect(PROJECTS_DB, timeout=30)
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute("DELETE FROM mileage_log WHERE doc_id = ? AND username = ?",
+                         (doc_id, session["username"]))
+            conn.commit()
+            conn.close()
+        except Exception:
+            pass
+        ip = _get_client_ip(request)
+        _log_event(session["username"], ip, "mileage-delete", {"doc_id": doc_id})
+        return {"ok": True}
+
+    return await asyncio.to_thread(_run)
+
+
+class MileageEditRequest(BaseModel):
+    car_id: str
+    start_km: int
+    end_km: int
+    activities_id: str
+    requests_id: str
+    date: str = ""
+    comment: str = ""
+
+
+@app.put("/api/mileage/{doc_id}")
+async def edit_mileage(doc_id: str, req: MileageEditRequest,
+                       request: Request, session: dict = Depends(check_auth)):
+    """Uređuje km unos: briše stari iz TVI, dodaje novi, ažurira keš."""
+    cars = _load_cars()
+    car = next((c for c in cars if c["_id"] == req.car_id), None)
+    if not car:
+        raise HTTPException(400, f"Nepoznat automobil: {req.car_id}")
+    if req.end_km <= req.start_km:
+        raise HTTPException(400, "Krajnja kilometraža mora biti veća od početne.")
+
+    amount     = req.end_km - req.start_km
+    unit_price = car["unitPrice"]
+    target_date = _parse_date(req.date) if req.date else date.today()
+    date_ms = int(datetime(target_date.year, target_date.month, target_date.day, 12, 0).timestamp() * 1000)
+
+    item_obj = {
+        "code": car["code"], "name": car["name"], "description": None,
+        "type": car["type"], "baseUnitOfMeasure": car["baseUnitOfMeasure"],
+        "unitPrice": unit_price, "unitCost": None, "percentage": None,
+        "systemInfo": None, "integrationInfo": None, "store": None,
+        "_id": {"$type": "oid", "$value": car["_id"]},
+    }
+
+    full_name = session.get("full_name", "")
+    name_parts = full_name.split(None, 1)
+    added_by_obj = {
+        "_id": session["user_id"],
+        "profile": {
+            "firstName": name_parts[0] if name_parts else "",
+            "lastName":  name_parts[1] if len(name_parts) > 1 else "",
+        },
+    }
+
+    def _run():
+        ddp = _connect_login(session)
+        try:
+            ddp.remove_request_item(doc_id)
+            result = ddp.add_request_item(
+                item=item_obj, amount=amount, unit_price=unit_price,
+                date_ms=date_ms, start_km=req.start_km, end_km=req.end_km,
+                activities_id=req.activities_id, requests_id=req.requests_id,
+                comment=req.comment or None, added_by=added_by_obj,
+            )
+        finally:
+            ddp.close()
+        new_doc_id: str | None = None
+        if result and isinstance(result.get("result"), str):
+            new_doc_id = result["result"]
+        # Ažuriraj keš: obriši stari, dodaj novi
+        try:
+            proj_name = ""
+            if PROJECTS_DB.exists():
+                conn2 = sqlite3.connect(PROJECTS_DB, timeout=30)
+                row = conn2.execute("SELECT name FROM projects WHERE id = ?",
+                                    (req.activities_id,)).fetchone()
+                conn2.close()
+                if row:
+                    proj_name = row[0]
+            date_str = target_date.strftime("%Y-%m-%d")
+            _ensure_mileage_table()
+            conn = sqlite3.connect(PROJECTS_DB, timeout=30)
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute("DELETE FROM mileage_log WHERE doc_id=? AND username=?",
+                         (doc_id, session["username"]))
+            if new_doc_id:
+                conn.execute(
+                    "INSERT OR REPLACE INTO mileage_log "
+                    "(doc_id, username, car_id, car_name, start_km, end_km, amount, unit_price, total, "
+                    " project_name, activities_id, requests_id, date, created_at, comment) "
+                    "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    (new_doc_id, session["username"], req.car_id, car["name"],
+                     req.start_km, req.end_km, amount, unit_price, round(amount * unit_price, 2),
+                     proj_name, req.activities_id, req.requests_id,
+                     date_str, datetime.now().strftime("%Y-%m-%d %H:%M:%S"), req.comment or ""),
+                )
+            conn.commit()
+            conn.close()
+        except Exception:
+            pass
+        ip = _get_client_ip(request)
+        _log_event(session["username"], ip, "mileage-edit",
+                   {"old_doc_id": doc_id, "new_doc_id": new_doc_id,
+                    "amount": amount, "total": round(amount * unit_price, 2)})
+        return {
+            "ok": True, "car": car["name"], "amount": amount,
+            "total": round(amount * unit_price, 2), "doc_id": new_doc_id,
+        }
+
+    return await asyncio.to_thread(_run)
 
 
 # ── MCP u produkciji (isti alati kao tvi_mcp.py) ─────────────────────────────────

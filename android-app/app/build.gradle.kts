@@ -38,4 +38,5 @@ dependencies {
     implementation("com.google.android.material:material:1.11.0")
     implementation("androidx.constraintlayout:constraintlayout:2.1.4")
     implementation("androidx.webkit:webkit:1.8.0")
+    implementation("androidx.swiperefreshlayout:swiperefreshlayout:1.1.0")
 }

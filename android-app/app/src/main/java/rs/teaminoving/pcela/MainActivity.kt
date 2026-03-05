@@ -3,6 +3,7 @@ package rs.teaminoving.pcela
 import android.Manifest
 import android.annotation.SuppressLint
 import android.content.pm.PackageManager
+import android.graphics.Color
 import android.os.Bundle
 import android.speech.tts.TextToSpeech
 import android.webkit.CookieManager
@@ -15,6 +16,7 @@ import android.webkit.WebViewClient
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
+import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import rs.teaminoving.pcela.databinding.ActivityMainBinding
 import java.util.Locale
 
@@ -64,7 +66,29 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         tts = TextToSpeech(this, this)
 
         val webView: WebView = binding.webview
-        webView.webViewClient = WebViewClient()
+        val swipeRefresh: SwipeRefreshLayout = binding.swipeRefresh
+
+        // Boje indikatora: plava i žuta (boje Pčele)
+        swipeRefresh.setColorSchemeColors(
+            Color.parseColor("#1e3a5f"),
+            Color.parseColor("#f59e0b"),
+        )
+
+        // Pull-to-refresh: osveži stranicu
+        swipeRefresh.setOnRefreshListener {
+            webView.reload()
+        }
+
+        // Aktiviraj swipe samo kad je WebView na vrhu (scrollY == 0)
+        swipeRefresh.setOnChildScrollUpCallback { _, _ ->
+            webView.scrollY > 0
+        }
+
+        webView.webViewClient = object : WebViewClient() {
+            override fun onPageFinished(view: WebView, url: String) {
+                swipeRefresh.isRefreshing = false
+            }
+        }
 
         webView.webChromeClient = object : WebChromeClient() {
             override fun onPermissionRequest(request: PermissionRequest) {

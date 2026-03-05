@@ -158,14 +158,34 @@
     .km-day-body.open { max-height: 800px; transition: max-height .35s ease-in; }
     .km-day-entry { background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 10px;
                     padding: .55rem .75rem; margin-bottom: .35rem; font-size: .82rem; }
+    .km-day-entry .km-e-header { display: flex; align-items: center; justify-content: space-between; }
     .km-day-entry .km-e-car { font-weight: 600; color: #0369a1; font-size: .84rem; }
     .km-day-entry .km-e-range { color: #475569; margin-top: .15rem; }
     .km-day-entry .km-e-range b { color: #0c4a6e; }
     .km-day-entry .km-e-proj { color: #64748b; font-size: .78rem; margin-top: .1rem; }
-    .km-day-entry .km-e-comment { color: #9ca3af; font-size: .75rem; font-style: italic; margin-top: .1rem; }
+    .km-day-entry .rec-actions { display: flex; gap: .2rem; }
+    .km-day-entry .rec-comment { color: #9ca3af; font-size: .76rem; font-style: italic; margin-top: .1rem; }
     .km-day-total { display: flex; justify-content: flex-end; gap: 1rem;
                     font-size: .78rem; color: #0369a1; font-weight: 600;
                     padding: .15rem .2rem 0; }
+    /* Hist mode segmented buttons */
+    .hist-mode-btn { background:#fff; color:#475569; border:none; border-right:1px solid #cbd5e1;
+      padding:.52rem .3rem; font-size:.78rem; font-weight:600; cursor:pointer;
+      transition:background .15s,color .15s; flex:1; white-space:nowrap; }
+    .hist-mode-btn:last-child { border-right:none; }
+    .hist-mode-btn.active { background:#1e3a5f; color:#fff; }
+    .hist-mode-btn:not(.active):hover { background:#f1f5f9; }
+
+    /* Car report tabela */
+    .crp-table { width:100%; border-collapse:collapse; font-size:.76rem; background:#fff; }
+    .crp-th { background:#1e3a5f; color:#fff; padding:.4rem .55rem; text-align:left; white-space:nowrap; font-weight:600; }
+    .crp-th.crp-num, .crp-td.crp-num { text-align:right; }
+    .crp-td { padding:.38rem .55rem; border-bottom:1px solid #f1f5f9; vertical-align:top; color:#334155; }
+    .crp-table tbody tr:nth-child(even) .crp-td { background:#f8fafc; }
+    .crp-table tbody tr:hover .crp-td { background:#eff6ff; }
+    .crp-proj { max-width:160px; color:#64748b; font-size:.72rem; }
+    .crp-comment { max-width:110px; color:#9ca3af; font-style:italic; font-size:.72rem; }
+
     /* Istorija kilometraže */
     .km-hist-block { background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 10px;
                      padding: .6rem .75rem; margin-bottom: .5rem; }
@@ -626,8 +646,8 @@
       <div class="km-summary" id="km-summary"></div>
 
       <div class="form-group">
-        <label class="form-lbl">Komentar <span style="color:#9ca3af;font-weight:400">(opciono)</span></label>
-        <input type="text" class="form-input" id="km-comment" placeholder="npr. odlazak na teren…">
+        <label class="form-lbl">Komentar</label>
+        <input type="text" class="form-input" id="km-comment" placeholder="Opciono…">
       </div>
 
       <div class="form-btns">
@@ -710,9 +730,31 @@
           </div>
         </div>
       </div>
-      <div style="display:flex;gap:.5rem;margin-top:.6rem">
-        <button class="btn-primary" onclick="loadHistory()" style="flex:1">Prikaži</button>
-        <button class="btn-car" onclick="loadMileageHistory()" title="Kilometraža za period" style="width:auto;padding:.4rem .7rem">🚗</button>
+      <div style="display:flex;gap:0;margin-top:.6rem;border-radius:10px;overflow:hidden;border:1px solid #cbd5e1">
+        <button class="hist-mode-btn" id="hmbtn-work" onclick="setHistMode('work')">📅 Radno vreme</button>
+        <button class="hist-mode-btn" id="hmbtn-km" onclick="setHistMode('km')">🚗 Moje km</button>
+        <button class="hist-mode-btn" id="hmbtn-car" onclick="setHistMode('car')">📋 Km auta</button>
+      </div>
+
+      <!-- Car report sekcija -->
+      <div id="car-report-section" class="hidden" style="margin-top:.75rem;border-top:1px solid #e2e8f0;padding-top:.75rem">
+        <div class="form-lbl" style="margin-bottom:.4rem">Automobil</div>
+        <div style="position:relative">
+          <input type="text" class="form-input" id="crp-car-search"
+                 placeholder="Pretraži po tablici ili imenu…"
+                 autocomplete="off"
+                 oninput="onCrpCarSearch(this.value)"
+                 onfocus="onCrpCarSearch(this.value)"
+                 style="padding-right:2rem">
+          <button class="proj-clear hidden" id="crp-car-clear"
+                  onclick="clearCrpCar()"
+                  style="position:absolute;right:.5rem;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;font-size:.9rem;color:#9ca3af">✕</button>
+          <div class="proj-results hidden" id="crp-car-results"></div>
+        </div>
+        <input type="hidden" id="crp-car-id">
+        <button class="btn-primary" onclick="loadCarReport()" style="width:100%;margin-top:.5rem">
+          Prikaži evidenciju
+        </button>
       </div>
     </div>
 
@@ -1819,6 +1861,8 @@ async function loadDanas() {
 
 async function loadDayMileage() {
   const sec = document.getElementById('km-day-section');
+  sec.innerHTML = '<div style="padding:.4rem .2rem;color:#9ca3af;font-size:.8rem"><span class="spin"></span> km…</div>';
+  sec.classList.remove('hidden');
   try {
     const d = await api(`/api/mileage?datum=${S.datum}`);
     const entries = d.entries || [];
@@ -1838,15 +1882,23 @@ async function loadDayMileage() {
       <span class="km-arrow" id="km-day-arrow">▶</span>
     </div>`;
     html += '<div class="km-day-body" id="km-day-body">';
-    entries.forEach(e => {
+    entries.forEach((e, idx) => {
       const projShort = e.project_name
         ? esc(e.project_name.length > 50 ? e.project_name.slice(0, 47) + '…' : e.project_name)
         : '';
-      html += `<div class="km-day-entry">
-        <div class="km-e-car">${esc(e.car_name)}</div>
+      const docId = e.doc_id || '';
+      const eData = encodeURIComponent(JSON.stringify(e));
+      html += `<div class="km-day-entry" id="km-entry-${idx}">
+        <div class="km-e-header">
+          <div class="km-e-car">${esc(e.car_name)}</div>
+          <div class="rec-actions">
+            ${docId ? `<button class="btn-ic edit" onclick="editKm('${esc(docId)}', ${idx})" title="Uredi">✎</button>` : ''}
+            ${docId ? `<button class="btn-ic del"  onclick="deleteKm('${esc(docId)}')" title="Obriši">🗑</button>` : ''}
+          </div>
+        </div>
         <div class="km-e-range">${e.start_km.toLocaleString()} → ${e.end_km.toLocaleString()} km &nbsp;·&nbsp; <b>${e.amount} km</b> &nbsp;·&nbsp; <b>${e.total.toLocaleString()} din</b></div>
         ${projShort ? `<div class="km-e-proj">${projShort}</div>` : ''}
-        ${e.comment ? `<div class="km-e-comment"># ${esc(e.comment)}</div>` : ''}
+        ${e.comment ? `<div class="rec-comment"># ${esc(e.comment)}</div>` : ''}
       </div>`;
     });
     if (entries.length > 1) {
@@ -1855,6 +1907,8 @@ async function loadDayMileage() {
     html += '</div>';
     sec.innerHTML = html;
     sec.classList.remove('hidden');
+    // Sačuvaj entries globalno za edit
+    _kmDayEntries = entries;
   } catch {
     sec.classList.add('hidden');
   }
@@ -2095,6 +2149,8 @@ document.addEventListener('click', e => {
 let _kmCars = [];
 let _kmSelProj = null;
 let _kmProjTimer;
+let _kmEditDocId = null;   // doc_id unosa koji se uređuje
+let _kmDayEntries = [];    // entries učitani u loadDayMileage
 
 function _getKmStore() {
   try { return JSON.parse(localStorage.getItem('tvi_km_cars') || '{}'); } catch { return {}; }
@@ -2163,6 +2219,8 @@ function closeKmForm() {
   document.getElementById('km-card').classList.add('hidden');
   document.querySelector('.action-row').classList.remove('hidden');
   document.getElementById('km-comment').value = '';
+  // Resetuj edit state
+  _kmEditDocId = null;
 }
 
 function _kmCarLabel(c) {
@@ -2313,9 +2371,10 @@ function clearKmProj() {
 }
 
 async function submitKm() {
-  const carId = document.getElementById('km-car').value;
+  const carId   = document.getElementById('km-car').value;
   const startKm = parseInt(document.getElementById('km-start').value);
-  const endKm = parseInt(document.getElementById('km-end').value);
+  const endKm   = parseInt(document.getElementById('km-end').value);
+  const comment = document.getElementById('km-comment').value.trim();
   if (!carId || !startKm || !endKm || endKm <= startKm || !_kmSelProj) return;
 
   const btn = document.getElementById('btn-km-save');
@@ -2358,6 +2417,93 @@ async function submitKm() {
     btn.textContent = 'Sačuvaj kilometražu';
   }
 }
+
+async function deleteKm(docId) {
+  if (!confirm('Obrisati ovaj km unos iz TVI?')) return;
+  try {
+    await api(`/api/mileage/${encodeURIComponent(docId)}`, { method: 'DELETE' });
+    toast('Km unos obrisan.', 'ok');
+    speak('Obrisano.');
+    loadDayMileage();
+  } catch(e) {
+    toast('Greška pri brisanju: ' + e.message, 'err');
+  }
+}
+
+async function editKm(docId, idx) {
+  const e = _kmDayEntries[idx];
+  if (!e) return;
+  _kmEditDocId = docId;
+  // Otvori formu i prefill
+  openKmForm();
+  await new Promise(r => setTimeout(r, 100)); // čekaj da se forma otvori
+  // Postavi auto
+  if (e.car_id) {
+    const car = _kmCars.find(c => c._id === e.car_id);
+    if (car) {
+      document.getElementById('km-car').value = e.car_id;
+      document.getElementById('km-car-search').value = _kmCarLabel(car);
+      document.getElementById('km-car-clear').classList.remove('hidden');
+      document.getElementById('km-car-results').classList.add('hidden');
+      await onKmCarChange();
+    }
+  }
+  // Postavi km vrednosti
+  document.getElementById('km-start').value = e.start_km;
+  document.getElementById('km-end').value   = e.end_km;
+  document.getElementById('km-comment').value = e.comment || '';
+  calcKm();
+  // Postavi projekat ako postoji
+  if (_kmDayEntries[idx].activities_id) {
+    _kmSelProj = {
+      activities_id: e.activities_id,
+      requests_id:   e.requests_id || '',
+      name:          e.project_name || '',
+      activity_number: '',
+    };
+    document.getElementById('km-proj-wrap').classList.add('hidden');
+    document.getElementById('km-proj-sel-name').textContent = e.project_name || '';
+    document.getElementById('km-proj-selected').classList.remove('hidden');
+    document.getElementById('km-proj-quick').classList.add('hidden');
+    calcKm();
+  }
+  // Promijeni dugme
+  document.getElementById('btn-km-save').textContent = 'Sačuvaj izmenu';
+}
+
+// Override submitKm za edit mode
+const _origSubmitKm = submitKm;
+submitKm = async function() {
+  if (!_kmEditDocId) { return _origSubmitKm(); }
+  // Edit mode: PUT /api/mileage/{doc_id}
+  const carId   = document.getElementById('km-car').value;
+  const startKm = parseInt(document.getElementById('km-start').value);
+  const endKm   = parseInt(document.getElementById('km-end').value);
+  const comment = document.getElementById('km-comment').value.trim();
+  if (!carId || !startKm || !endKm || endKm <= startKm || !_kmSelProj) return;
+  const btn = document.getElementById('btn-km-save');
+  btn.disabled = true; btn.textContent = 'Snimam…';
+  try {
+    const d = await api(`/api/mileage/${encodeURIComponent(_kmEditDocId)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        car_id: carId, start_km: startKm, end_km: endKm,
+        activities_id: _kmSelProj.activities_id, requests_id: _kmSelProj.requests_id,
+        date: S.datum || '', comment,
+      }),
+    });
+    if (d.ok) {
+      const store = _getKmStore();
+      store[carId] = endKm;
+      _setKmStore(store);
+      toast(`Izmjena sačuvana: ${d.amount} km = ${d.total} din`, 'ok');
+      closeKmForm();
+      loadDayMileage();
+    } else { toast(d.error || d.detail || 'Greška', 'err'); }
+  } catch(e) { toast('Greška: ' + e.message, 'err'); }
+  finally { btn.disabled = false; btn.textContent = 'Sačuvaj kilometražu'; }
+};
 
 // ────────────────────────────────────────────────────────────────────────────
 // MCP (produkcija)
@@ -2538,6 +2684,156 @@ async function loadMileageHistory() {
            <div class="khg-sub">${od || d.od} – ${doo || d.do}</div>
          </div>
        </div>`;
+  } catch(e) {
+    el.innerHTML = `<div class="empty">Greška: ${esc(e.message)}</div>`;
+  }
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Car report (Istorija tab — evidencija automobila)
+// ────────────────────────────────────────────────────────────────────────────
+let _crpCars = [];  // sve dostupne auta
+
+function setHistMode(mode) {
+  ['work','km','car'].forEach(m => {
+    document.getElementById('hmbtn-'+m).classList.toggle('active', m === mode);
+  });
+  const carSec = document.getElementById('car-report-section');
+  if (mode === 'car') {
+    carSec.classList.remove('hidden');
+    if (!_crpCars.length) {
+      api('/api/cars').then(d => {
+        _crpCars = d.cars || [];
+        if (d.my_car_id) {
+          const car = _crpCars.find(c => c._id === d.my_car_id);
+          if (car) _setCrpCar(car);
+        }
+      }).catch(e => toast('Greška pri učitavanju auta: ' + e.message, 'err'));
+    }
+  } else {
+    carSec.classList.add('hidden');
+    if (mode === 'work') loadHistory();
+    else if (mode === 'km') loadMileageHistory();
+  }
+}
+
+function _setCrpCar(car) {
+  document.getElementById('crp-car-id').value     = car._id;
+  document.getElementById('crp-car-search').value = car.name;
+  document.getElementById('crp-car-clear').classList.remove('hidden');
+  document.getElementById('crp-car-results').classList.add('hidden');
+}
+
+function clearCrpCar() {
+  document.getElementById('crp-car-id').value     = '';
+  document.getElementById('crp-car-search').value = '';
+  document.getElementById('crp-car-clear').classList.add('hidden');
+  document.getElementById('crp-car-results').classList.add('hidden');
+}
+
+function onCrpCarSearch(v) {
+  const res = document.getElementById('crp-car-results');
+  const q   = v.trim().toLowerCase();
+  const filtered = q ? _crpCars.filter(c => c.name.toLowerCase().includes(q)) : _crpCars;
+  if (!filtered.length) {
+    res.innerHTML = '<div class="proj-item" style="color:#9ca3af">Nema rezultata</div>';
+  } else {
+    res.innerHTML = filtered.map(c =>
+      `<div class="proj-item" onclick="selectCrpCar('${esc(c._id)}')">${esc(c.name)}</div>`
+    ).join('');
+  }
+  res.classList.remove('hidden');
+}
+
+function selectCrpCar(carId) {
+  const car = _crpCars.find(c => c._id === carId);
+  if (car) _setCrpCar(car);
+}
+
+async function loadCarReport() {
+  const carId   = document.getElementById('crp-car-id').value;
+  const carName = document.getElementById('crp-car-search').value;
+  if (!carId) { toast('Izaberi automobil.', 'err'); return; }
+  const od  = document.getElementById('h-od').value;
+  const doo = document.getElementById('h-do').value;
+  const el  = document.getElementById('hist-content');
+  el.innerHTML = '<div class="empty"><span class="spin"></span> Učitavam evidenciju…</div>';
+  document.getElementById('crp-car-results').classList.add('hidden');
+  try {
+    const d = await api(`/api/mileage/car-report?car_id=${encodeURIComponent(carId)}&od=${od}&do=${doo}`);
+    if (!d.steps?.length) {
+      el.innerHTML = '<div class="empty">Nema vožnji za izabrani automobil i period.</div>';
+      return;
+    }
+
+    const header = `<div style="font-weight:700;font-size:.88rem;color:#1e3a5f;margin-bottom:.5rem">
+      📋 ${esc(carName)} · ${esc(d.od)} – ${esc(d.do)}</div>`;
+    const footer = `<div class="km-hist-grand" style="margin-top:.5rem">
+        <div><div class="khg-big">${d.total_km.toLocaleString()} km</div>
+          <div class="khg-sub">${d.steps.length} unosa</div></div>
+        <div><div class="khg-big">${d.total_din.toLocaleString()} din</div>
+          <div class="khg-sub">${esc(d.od)} – ${esc(d.do)}</div></div>
+      </div>`;
+
+    if (window.innerWidth < 640) {
+      // Kartice (mobilni prikaz) — grupisano po danu
+      const byDay = {};
+      d.steps.forEach(s => {
+        const day = s.date.slice(0, 10);
+        if (!byDay[day]) byDay[day] = [];
+        byDay[day].push(s);
+      });
+      const cardsHtml = Object.entries(byDay).map(([day, entries]) => {
+        const dayKm  = entries.reduce((a,e) => a + (e.amount||0), 0);
+        const dayDin = entries.reduce((a,e) => a + (e.total||0), 0);
+        return `<div class="km-hist-block">
+          <div class="km-hist-day-hdr">
+            <span>${esc(day)}</span>
+            <span>${dayKm} km · ${dayDin.toLocaleString()} din</span>
+          </div>
+          ${entries.map(e => {
+            const proj = e.request_name
+              ? esc(e.request_name.length > 42 ? e.request_name.slice(0,39)+'…' : e.request_name)
+                + (e.request_number ? ` · ${esc(e.request_number)}` : '')
+              : '';
+            return `<div class="km-hist-row">
+              <div style="flex:1;min-width:0">
+                ${e.added_by ? `<div class="khr-car">${esc(e.added_by)}</div>` : ''}
+                <div class="khr-km">${e.start_km.toLocaleString()} → ${e.end_km.toLocaleString()} · <b>${e.amount} km</b></div>
+                ${proj ? `<div style="color:#64748b;font-size:.75rem">${proj}</div>` : ''}
+                ${e.comment ? `<div style="color:#9ca3af;font-size:.74rem;font-style:italic">${esc(e.comment)}</div>` : ''}
+              </div>
+              <div class="khr-total" style="padding-left:.5rem">${e.total.toLocaleString()} din</div>
+            </div>`;
+          }).join('')}
+        </div>`;
+      }).join('');
+      el.innerHTML = header + cardsHtml + footer;
+    } else {
+      // Tabela (desktop prikaz)
+      const rows = d.steps.map(s => `
+        <tr>
+          <td class="crp-td">${esc(s.date)}</td>
+          <td class="crp-td">${esc(s.added_by)}</td>
+          <td class="crp-td crp-comment">${esc(s.comment)}</td>
+          <td class="crp-td crp-proj">${esc(s.request_name)}</td>
+          <td class="crp-td" style="white-space:nowrap">${esc(s.request_number)}</td>
+          <td class="crp-td crp-num">${s.start_km.toLocaleString()}</td>
+          <td class="crp-td crp-num">${s.end_km.toLocaleString()}</td>
+          <td class="crp-td crp-num"><b>${s.amount}</b></td>
+          <td class="crp-td crp-num" style="color:#0c4a6e">${s.total.toLocaleString()}</td>
+        </tr>`).join('');
+      el.innerHTML = header
+        + `<div style="overflow-x:auto;border-radius:10px;box-shadow:0 1px 3px rgba(0,0,0,.1)">
+          <table class="crp-table"><thead><tr>
+            <th class="crp-th">Datum</th><th class="crp-th">Uneo</th>
+            <th class="crp-th">Komentar</th><th class="crp-th">Projekat</th>
+            <th class="crp-th">Br.</th><th class="crp-th crp-num">Od km</th>
+            <th class="crp-th crp-num">Do km</th><th class="crp-th crp-num">Km</th>
+            <th class="crp-th crp-num">Cena</th>
+          </tr></thead><tbody>${rows}</tbody></table></div>`
+        + footer;
+    }
   } catch(e) {
     el.innerHTML = `<div class="empty">Greška: ${esc(e.message)}</div>`;
   }
