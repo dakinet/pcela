@@ -438,6 +438,9 @@
 </head>
 <body>
 
+<!-- Debug panel -->
+<div id="dbg-panel" style="position:fixed;top:0;left:0;right:0;z-index:99999;background:rgba(0,0,0,.82);color:#4ade80;font-size:11px;font-family:monospace;padding:4px 8px;max-height:160px;overflow-y:auto;pointer-events:none"></div>
+
 <!-- Startup animation -->
 <div id="startup-overlay">
   <canvas id="hex-canvas"></canvas>
@@ -974,6 +977,21 @@ const API = window.location.origin.includes('127.0.0.1') || window.location.prot
   ? 'https://pcela.tvi.rs'
   : window.location.origin;
 
+// ── Debug log ────────────────────────────────────────────────────────────────
+const _dbgStart = Date.now();
+function dbg(msg, color) {
+  const p = document.getElementById('dbg-panel');
+  if (!p) return;
+  const t = ((Date.now() - _dbgStart) / 1000).toFixed(2);
+  const d = document.createElement('div');
+  d.style.color = color || '#4ade80';
+  d.textContent = `+${t}s ${msg}`;
+  p.appendChild(d);
+  p.scrollTop = p.scrollHeight;
+}
+window.onerror = (msg, src, line) => { dbg(`ERR: ${msg} (${src}:${line})`, '#f87171'); };
+dbg('page loaded, auth=' + (localStorage.getItem('tvi_auth') ? 'SET' : 'null'));
+
 // ────────────────────────────────────────────────────────────────────────────
 // Auth
 // ────────────────────────────────────────────────────────────────────────────
@@ -1064,8 +1082,10 @@ function speak(text) {
 // Me / Username
 // ────────────────────────────────────────────────────────────────────────────
 async function loadMe() {
+  dbg('loadMe() start');
   try {
     const d = await api('/api/me');
+    dbg('loadMe() ok: ' + (d.full_name || d.username));
     const name = d.full_name || d.username;
     const initials = name.split(' ').map(w => w[0]).filter(Boolean).slice(0,2).join('').toUpperCase();
     document.getElementById('user-name').textContent = name;
@@ -3423,6 +3443,7 @@ async function loadLogs() {
 
   // ── Sequence ──────────────────────────────────────────────────────────────
   function onLanded() {
+    dbg('bee landed');
     // Glow under bee
     const lp = waypoints[waypoints.length - 1];
     glow.style.left = (lp.x + 36 - 210) + 'px';
@@ -3445,37 +3466,48 @@ async function loadLogs() {
   }
 
   function dismiss() {
+    dbg('dismiss() start, done=' + done, '#fbbf24');
     if (done) return;
     done = true;
-    // Bee flies off top-right
-    const lp = waypoints[waypoints.length - 1];
-    beeEl.style.transition = 'transform .8s cubic-bezier(.4,0,1,1)';
-    beeEl.style.transform  = `translate(${W + 80}px,-120px) rotate(25deg)`;
-    bubble.style.opacity = '0';
+    // Odmah sakrij sve — ne čekaj animaciju, null-safe
+    ['startup-overlay','bee-el','speech-bubble','skip-hint'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.style.display = 'none';
+    });
     // Enable pull-to-refresh u APK-u
     try { if (window.AndroidApp) window.AndroidApp.enableRefresh(); } catch(e) {}
+    dbg('dismissed ✓', '#4ade80');
+    // Ukloni iz DOM-a nakon kratke pauze
     setTimeout(() => {
-      overlay.classList.add('fade-out');
-      setTimeout(() => {
-        overlay.remove(); beeEl.remove(); bubble.remove(); skipHint.remove();
-      }, 750);
+      ['startup-overlay','bee-el','speech-bubble','skip-hint'].forEach(id => {
+        try { const el = document.getElementById(id); if (el) el.remove(); } catch(e) {}
+      });
     }, 300);
   }
 
   // Skip on tap/click — listener na document da uhvati i klik na bee-el
-  function skip() { if (!done) dismiss(); }
+  function skip() {
+    dbg('skip() called, done=' + done, '#fbbf24');
+    if (!done) dismiss();
+  }
   document.addEventListener('click', skip);
   document.addEventListener('touchend', skip, { passive: true });
 
-  // Garantovani fallback: ako animacija ne završi za 8s, forsiran dismiss
-  setTimeout(skip, 8000);
+  // Garantovani fallback: ako animacija ne završi za 3s, forsiran dismiss
+  setTimeout(skip, 3000);
 
   // Start
-  drawHex();
-  beeEl.style.transform = `translate(-90px,-90px) rotate(35deg)`;
-  beeEl.style.display = 'block';
-  buzz(2.6);
-  setTimeout(() => requestAnimationFrame(flyBee), 200);
+  try {
+    drawHex();
+    beeEl.style.transform = `translate(-90px,-90px) rotate(35deg)`;
+    beeEl.style.display = 'block';
+    buzz(2.6);
+    dbg('animation start');
+    setTimeout(() => requestAnimationFrame(flyBee), 200);
+  } catch(e) {
+    dbg('IIFE error: ' + e.message, '#f87171');
+    skip();
+  }
 
 })();
 
@@ -3483,10 +3515,14 @@ async function loadLogs() {
 // Init
 // ────────────────────────────────────────────────────────────────────────────
 AUTH_HEADER = localStorage.getItem('tvi_auth') || null;
+dbg('init: auth=' + (AUTH_HEADER ? 'SET' : 'null'));
 if (AUTH_HEADER) {
   hideLogin();
+  dbg('login hidden, loading...');
   loadMe();
-  loadDanas(); // api() će pozvati showLogin() ako je token istekao (401)
+  loadDanas();
+} else {
+  dbg('no auth → showLogin', '#fbbf24');
 }
 // else: login overlay ostaje vidljiv dok se korisnik ne prijavi
 </script>
