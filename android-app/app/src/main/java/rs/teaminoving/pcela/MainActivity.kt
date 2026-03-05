@@ -74,6 +74,9 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
             Color.parseColor("#f59e0b"),
         )
 
+        // Isključen dok app nije učitana (JS će pozvati AppBridge.enableRefresh())
+        swipeRefresh.isEnabled = false
+
         // Pull-to-refresh: osveži stranicu
         swipeRefresh.setOnRefreshListener {
             webView.reload()
@@ -119,6 +122,7 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         }
 
         webView.addJavascriptInterface(TtsBridge(), "AndroidTTS")
+        webView.addJavascriptInterface(AppBridge(swipeRefresh), "AndroidApp")
 
         CookieManager.getInstance().apply {
             setAcceptCookie(true)
@@ -133,6 +137,13 @@ class MainActivity : AppCompatActivity(), TextToSpeech.OnInitListener {
         tts.stop()
         tts.shutdown()
         super.onDestroy()
+    }
+
+    inner class AppBridge(private val swipe: SwipeRefreshLayout) {
+        @JavascriptInterface
+        fun enableRefresh() {
+            swipe.post { swipe.isEnabled = true }
+        }
     }
 
     inner class TtsBridge {

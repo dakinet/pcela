@@ -385,7 +385,7 @@
     #startup-overlay.fade-out { opacity:0; pointer-events:none; }
     #hex-canvas { position:absolute; inset:0; opacity:.55; }
     #startup-glow { position:absolute; width:420px; height:420px; border-radius:50%; background:radial-gradient(circle, rgba(251,191,36,.18) 0%, transparent 70%); pointer-events:none; transition:opacity .5s; opacity:0; }
-    #bee-el { position:fixed; left:50%; top:50%; z-index:20002; filter:drop-shadow(0 0 18px rgba(251,191,36,.95)); font-size:0; will-change:transform; }
+    #bee-el { position:fixed; left:50%; top:50%; z-index:20002; filter:drop-shadow(0 0 18px rgba(251,191,36,.95)); font-size:0; will-change:transform; pointer-events:none; }
     #bee-el svg { display:block; }
     .bee-wing-l { animation:wingL .11s ease-in-out infinite alternate; transform-origin:55% 85%; }
     .bee-wing-r { animation:wingR .11s ease-in-out infinite alternate; transform-origin:45% 85%; }
@@ -3452,6 +3452,8 @@ async function loadLogs() {
     beeEl.style.transition = 'transform .8s cubic-bezier(.4,0,1,1)';
     beeEl.style.transform  = `translate(${W + 80}px,-120px) rotate(25deg)`;
     bubble.style.opacity = '0';
+    // Enable pull-to-refresh u APK-u
+    try { if (window.AndroidApp) window.AndroidApp.enableRefresh(); } catch(e) {}
     setTimeout(() => {
       overlay.classList.add('fade-out');
       setTimeout(() => {
@@ -3460,14 +3462,16 @@ async function loadLogs() {
     }, 300);
   }
 
-  // Skip on click
+  // Skip on tap/click — listener na document da uhvati i klik na bee-el
   function skip() { if (!done) dismiss(); }
-  overlay.addEventListener('click', skip);
-  document.getElementById('skip-hint').addEventListener('click', skip);
+  document.addEventListener('click', skip);
+  document.addEventListener('touchend', skip, { passive: true });
+
+  // Garantovani fallback: ako animacija ne završi za 8s, forsiran dismiss
+  setTimeout(skip, 8000);
 
   // Start
   drawHex();
-  // Bee starts off-screen (transform: translate from top-left corner)
   beeEl.style.transform = `translate(-90px,-90px) rotate(35deg)`;
   beeEl.style.display = 'block';
   buzz(2.6);
