@@ -438,9 +438,6 @@
 </head>
 <body>
 
-<!-- Debug panel -->
-<div id="dbg-panel" style="position:fixed;top:0;left:0;right:0;z-index:99999;background:rgba(0,0,0,.82);color:#4ade80;font-size:11px;font-family:monospace;padding:4px 8px;max-height:160px;overflow-y:auto;pointer-events:none"></div>
-
 <!-- Startup animation -->
 <div id="startup-overlay">
   <canvas id="hex-canvas"></canvas>
@@ -978,20 +975,6 @@ const API = window.location.origin.includes('127.0.0.1') || window.location.prot
   : window.location.origin;
 
 // ── Debug log ────────────────────────────────────────────────────────────────
-const _dbgStart = Date.now();
-function dbg(msg, color) {
-  const p = document.getElementById('dbg-panel');
-  if (!p) return;
-  const t = ((Date.now() - _dbgStart) / 1000).toFixed(2);
-  const d = document.createElement('div');
-  d.style.color = color || '#4ade80';
-  d.textContent = `+${t}s ${msg}`;
-  p.appendChild(d);
-  p.scrollTop = p.scrollHeight;
-}
-window.onerror = (msg, src, line) => { dbg(`ERR: ${msg} (${src}:${line})`, '#f87171'); };
-dbg('page loaded, auth=' + (localStorage.getItem('tvi_auth') ? 'SET' : 'null'));
-
 // ────────────────────────────────────────────────────────────────────────────
 // Auth
 // ────────────────────────────────────────────────────────────────────────────
@@ -3287,46 +3270,95 @@ async function loadLogs() {
 (function() {
   let done = false;
 
+  // ── Dismiss — null-safe, instant hide ────────────────────────────────────
   function dismiss() {
     if (done) return;
     done = true;
-    dbg('dismissed', '#4ade80');
-    // Odmah sakrij overlay
-    ['startup-overlay','bee-el','speech-bubble','skip-hint'].forEach(function(id) {
-      var el = document.getElementById(id);
+    ['startup-overlay','bee-el','speech-bubble','skip-hint'].forEach(id => {
+      const el = document.getElementById(id);
       if (el) el.style.display = 'none';
     });
     try { if (window.AndroidApp) window.AndroidApp.enableRefresh(); } catch(e) {}
-    setTimeout(function() {
-      ['startup-overlay','bee-el','speech-bubble','skip-hint'].forEach(function(id) {
-        try { var el = document.getElementById(id); if (el) el.remove(); } catch(e) {}
+    setTimeout(() => {
+      ['startup-overlay','bee-el','speech-bubble','skip-hint'].forEach(id => {
+        try { const el = document.getElementById(id); if (el) el.remove(); } catch(e) {}
       });
     }, 300);
   }
 
-  // Tap/klik bilo gde → odmah dismiss
-  document.addEventListener('click', function() { dismiss(); });
-  document.addEventListener('touchend', function() { dismiss(); }, { passive: true });
+  // Tap/klik bilo gdje → odmah dismiss
+  document.addEventListener('click', dismiss);
+  document.addEventListener('touchend', dismiss, { passive: true });
 
-  // Pčela se pojavi u centru, kratka animacija krila (CSS), pa after 1.5s auto-dismiss
+  // Garantovani fallback: 4s
+  setTimeout(dismiss, 4000);
+
+  // ── Hex grid canvas ───────────────────────────────────────────────────────
   try {
-    var beeEl = document.getElementById('bee-el');
-    if (beeEl) {
-      beeEl.style.transition = 'opacity .4s';
-      beeEl.style.opacity = '0';
-      beeEl.style.display = 'block';
-      // Pozicioniranje CSS-om: position:fixed, left:50%, top:50%
-      // transform dovede u centar
-      beeEl.style.transform = 'translate(-36px,-42px) scale(1.2)';
-      setTimeout(function() {
-        if (done) return;
-        beeEl.style.opacity = '1';
-      }, 50);
+    const canvas = document.getElementById('hex-canvas');
+    const ctx = canvas.getContext('2d');
+    canvas.width  = window.innerWidth;
+    canvas.height = window.innerHeight;
+    const R = 34, W = R * Math.sqrt(3), H = R * 2;
+    const cols = Math.ceil(canvas.width  / W) + 2;
+    const rows = Math.ceil(canvas.height / (H * .75)) + 2;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        const cx = c * W + (r % 2) * W * .5 - W;
+        const cy = r * H * .75 - H;
+        ctx.strokeStyle = `rgba(59,130,246,${(.04 + Math.random() * .08).toFixed(3)})`;
+        ctx.lineWidth = .8;
+        ctx.beginPath();
+        for (let i = 0; i < 6; i++) {
+          const a = Math.PI / 3 * i - Math.PI / 6;
+          i === 0
+            ? ctx.moveTo(cx + R * Math.cos(a), cy + R * Math.sin(a))
+            : ctx.lineTo(cx + R * Math.cos(a), cy + R * Math.sin(a));
+        }
+        ctx.closePath(); ctx.stroke();
+      }
     }
-  } catch(e) { dbg('bee init err: ' + e.message, '#f87171'); }
+    // Animacija: nasumični heksagoni žuto zasvetluju
+    let t = 0;
+    const hexAnim = () => {
+      if (done) return;
+      if (++t % 8 === 0) {
+        const r = Math.floor(Math.random() * rows);
+        const c = Math.floor(Math.random() * cols);
+        const cx = c * W + (r % 2) * W * .5 - W;
+        const cy = r * H * .75 - H;
+        const drawHex = (color, lw) => {
+          ctx.strokeStyle = color; ctx.lineWidth = lw;
+          ctx.beginPath();
+          for (let i = 0; i < 6; i++) {
+            const a = Math.PI / 3 * i - Math.PI / 6;
+            ctx.lineTo(cx + R * Math.cos(a), cy + R * Math.sin(a));
+          }
+          ctx.closePath(); ctx.stroke();
+        };
+        drawHex(`rgba(251,191,36,${(.2 + Math.random() * .3).toFixed(2)})`, 1.2);
+        setTimeout(() => { if (!done) drawHex('rgba(59,130,246,0.06)', .8); }, 400);
+      }
+      requestAnimationFrame(hexAnim);
+    };
+    requestAnimationFrame(hexAnim);
+  } catch(e) {}
 
-  // Garantovani auto-dismiss nakon 1.5s
-  setTimeout(dismiss, 1500);
+  // ── Pčela u centru ────────────────────────────────────────────────────────
+  try {
+    const beeEl = document.getElementById('bee-el');
+    if (beeEl) {
+      beeEl.style.transform = 'translate(-36px,-42px) scale(1.15)';
+      beeEl.style.opacity = '0';
+      beeEl.style.transition = 'opacity .5s';
+      beeEl.style.display = 'block';
+      setTimeout(() => { if (!done) beeEl.style.opacity = '1'; }, 60);
+    }
+  } catch(e) {}
+
+  // Auto-dismiss nakon 2.5s (hex se vidi ~2s pa fade out)
+  setTimeout(dismiss, 2500);
 
 })();
 
@@ -3334,14 +3366,10 @@ async function loadLogs() {
 // Init
 // ────────────────────────────────────────────────────────────────────────────
 AUTH_HEADER = localStorage.getItem('tvi_auth') || null;
-dbg('init: auth=' + (AUTH_HEADER ? 'SET' : 'null'));
 if (AUTH_HEADER) {
   hideLogin();
-  dbg('login hidden, loading...');
   loadMe();
   loadDanas();
-} else {
-  dbg('no auth → showLogin', '#fbbf24');
 }
 // else: login overlay ostaje vidljiv dok se korisnik ne prijavi
 </script>
