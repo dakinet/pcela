@@ -41,11 +41,36 @@ Get-Content $envFile | Where-Object { $_ -match "=" } | ForEach-Object {
 $ip   = $cfg["SERVER_IP"]
 $user = $cfg["SERVER_USER"]
 $pass = $cfg["SERVER_PASS"]
-$dst  = "${user}@${ip}:/opt/tvi-bee/"
 
 $root = Split-Path -Parent $PSScriptRoot   # direktorijum projekta (bee/)
 
 Write-Host "=== Pčela deploy → $ip ===" -ForegroundColor Cyan
+
+# Funkcija za kopiranje jednog fajla sa verifikacijom
+function Copy-ToServer($localPath, $remoteDir) {
+    $name = Split-Path -Leaf $localPath
+    $localSize = (Get-Item $localPath).Length
+    Write-Host "  → $name  ($localSize B lokalno)" -NoNewline
+
+    # Kopiraj fajl (-batch: bez interaktivnih pitanja, failuje ako host key nije poznat)
+    & $pscp -batch -pw $pass $localPath "${user}@${ip}:${remoteDir}"
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host " [GREŠKA pscp exit=$LASTEXITCODE]" -ForegroundColor Red
+        throw "pscp failed za $name (exit code $LASTEXITCODE)"
+    }
+
+    # Verifikacija: provjeri veličinu na serveru
+    $remoteSize = & $plink -batch -pw $pass "${user}@${ip}" "stat -c%s ${remoteDir}${name} 2>/dev/null || echo 0"
+    $remoteSize = $remoteSize.Trim()
+    # Linux fajl je manji zbog LF umjesto CRLF — dozvoli razliku do 5%
+    $ratio = if ([int]$remoteSize -gt 0) { [int]$remoteSize / $localSize } else { 0 }
+    if ($ratio -lt 0.90) {
+        Write-Host " [GREŠKA: server=$remoteSize B, lokalno=$localSize B]" -ForegroundColor Red
+        throw "Verifikacija neuspješna za $name"
+    }
+
+    Write-Host "  OK server=$remoteSize B" -ForegroundColor Green
+}
 
 # Fajlovi koji se uvek šalju
 $files = @(
@@ -56,22 +81,26 @@ $files = @(
 
 foreach ($f in $files) {
     if (Test-Path $f) {
-        Write-Host "  → $(Split-Path -Leaf $f)"
-        & $pscp -pw $pass $f $dst
+        Copy-ToServer $f "/opt/tvi-bee/"
     }
 }
 
 # APK (ako postoji)
 $apk = Join-Path $root "Pcela.apk"
 if (Test-Path $apk) {
-    Write-Host "  → Pcela.apk"
-    & $pscp -pw $pass $apk $dst
+    Write-Host "  → Pcela.apk" -NoNewline
+    & $pscp -batch -pw $pass $apk "${user}@${ip}:/opt/tvi-bee/"
+    if ($LASTEXITCODE -ne 0) { throw "pscp failed za Pcela.apk" }
+    Write-Host "  OK" -ForegroundColor Green
 }
 
 # Restart servisa
 Write-Host ""
 Write-Host "Restartujem tvi-bee servis..."
-& $plink -pw $pass "${user}@${ip}" "chown -R tvi:tvi /opt/tvi-bee && systemctl restart tvi-bee && sleep 1 && systemctl is-active tvi-bee"
+& $plink -batch -pw $pass "${user}@${ip}" "chown -R tvi:tvi /opt/tvi-bee && systemctl restart tvi-bee && sleep 1 && systemctl is-active tvi-bee"
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "UPOZORENJE: restart možda nije uspio (exit=$LASTEXITCODE)" -ForegroundColor Yellow
+}
 
 Write-Host ""
 Write-Host "=== Gotovo ===" -ForegroundColor Green
