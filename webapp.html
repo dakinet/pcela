@@ -2401,8 +2401,6 @@ async function submitKm() {
   btn.disabled = true;
   btn.textContent = 'Snimam…';
 
-  const comment = document.getElementById('km-comment').value.trim();
-
   try {
     const d = await api('/api/mileage', {
       method: 'POST',
