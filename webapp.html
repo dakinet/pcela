@@ -1065,10 +1065,8 @@ function speak(text) {
 // Me / Username
 // ────────────────────────────────────────────────────────────────────────────
 async function loadMe() {
-  dbg('loadMe() start');
   try {
     const d = await api('/api/me');
-    dbg('loadMe() ok: ' + (d.full_name || d.username));
     const name = d.full_name || d.username;
     const initials = name.split(' ').map(w => w[0]).filter(Boolean).slice(0,2).join('').toUpperCase();
     document.getElementById('user-name').textContent = name;
@@ -3345,20 +3343,77 @@ async function loadLogs() {
     requestAnimationFrame(hexAnim);
   } catch(e) {}
 
-  // ── Pčela u centru ────────────────────────────────────────────────────────
+  // ── Pčela: let po ekranu → centar → gore desno (user icon) → dismiss ──────
   try {
     const beeEl = document.getElementById('bee-el');
-    if (beeEl) {
-      beeEl.style.transform = 'translate(-36px,-42px) scale(1.15)';
-      beeEl.style.opacity = '0';
-      beeEl.style.transition = 'opacity .5s';
-      beeEl.style.display = 'block';
-      setTimeout(() => { if (!done) beeEl.style.opacity = '1'; }, 60);
-    }
-  } catch(e) {}
+    if (!beeEl) throw new Error('no bee');
+    beeEl.style.display = 'block';
 
-  // Auto-dismiss nakon 2.5s (hex se vidi ~2s pa fade out)
-  setTimeout(dismiss, 2500);
+    const W = window.innerWidth, H = window.innerHeight;
+    const cx = W / 2 - 36, cy = H / 2 - 42;
+
+    // Waypoints: off-screen → lutanje → centar
+    const waypoints = [
+      { x: -90,     y: -90,     rot:  35, sx:  1 },
+      { x: W * .35, y: H * .08, rot: -20, sx:  1 },
+      { x: W * .72, y: H * .42, rot:  25, sx: -1 },
+      { x: W * .12, y: H * .58, rot: -15, sx:  1 },
+      { x: W * .68, y: H * .15, rot:  30, sx: -1 },
+      { x: W * .25, y: H * .72, rot: -10, sx:  1 },
+      { x: cx,      y: cy,      rot:   0, sx:  1 },
+    ];
+
+    const SEG = 360; // ms po segmentu
+    let startT = null;
+
+    const lerp = (a, b, t) => a + (b - a) * t;
+    const ease = t => t < .5 ? 2*t*t : -1+(4-2*t)*t;
+
+    const fly = ts => {
+      if (done) return;
+      if (!startT) startT = ts;
+      const elapsed = ts - startT;
+      const seg = Math.floor(elapsed / SEG);
+      const t = ease(Math.min((elapsed % SEG) / SEG, 1));
+
+      if (seg >= waypoints.length - 1) {
+        // Sletio u centar
+        const lp = waypoints[waypoints.length - 1];
+        beeEl.style.transform = `translate(${lp.x}px,${lp.y}px) rotate(0deg)`;
+        onLanded();
+        return;
+      }
+      const from = waypoints[Math.min(seg,     waypoints.length - 1)];
+      const to   = waypoints[Math.min(seg + 1, waypoints.length - 1)];
+      beeEl.style.transform = `translate(${lerp(from.x,to.x,t)}px,${lerp(from.y,to.y,t)}px) rotate(${lerp(from.rot,to.rot,t)}deg) scaleX(${t<.5?from.sx:to.sx})`;
+      requestAnimationFrame(fly);
+    };
+
+    beeEl.style.transform = `translate(-90px,-90px) rotate(35deg)`;
+    requestAnimationFrame(fly);
+
+    function onLanded() {
+      if (done) return;
+      // Namigni: kratko smanji pa vrati
+      beeEl.style.transition = 'transform .15s ease-in';
+      beeEl.style.transform  = `translate(${cx}px,${cy}px) scale(.7)`;
+      setTimeout(() => {
+        if (done) return;
+        beeEl.style.transform = `translate(${cx}px,${cy}px) scale(1)`;
+        // Odleti gore desno ka user ikoni
+        setTimeout(() => {
+          if (done) return;
+          beeEl.style.transition = 'transform .7s cubic-bezier(.4,0,1,1), opacity .5s .3s';
+          beeEl.style.transform  = `translate(${W - 20}px,-60px) rotate(20deg) scale(.5)`;
+          beeEl.style.opacity    = '0';
+          setTimeout(dismiss, 800);
+        }, 400);
+      }, 200);
+    }
+  } catch(e) {
+    // Ako animacija pukne, odmah dismiss
+    setTimeout(dismiss, 500);
+  }
 
 })();
 
