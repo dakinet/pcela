@@ -3724,7 +3724,9 @@ async def webapp():
     path = BASE_DIR / "webapp.html"
     if not path.exists():
         raise HTTPException(status_code=404, detail="webapp.html nije pronađen.")
-    return FileResponse(path, media_type="text/html")
+    return FileResponse(path, media_type="text/html",
+                        headers={"Cache-Control": "no-cache, no-store, must-revalidate",
+                                 "Pragma": "no-cache", "Expires": "0"})
 
 
 def _get_apk_path() -> Path | None:

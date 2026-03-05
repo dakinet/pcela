@@ -446,7 +446,7 @@
   <canvas id="hex-canvas"></canvas>
   <div id="startup-glow"></div>
 </div>
-<div id="bee-el">
+<div id="bee-el" style="display:none">
   <svg width="72" height="84" viewBox="0 0 72 84" xmlns="http://www.w3.org/2000/svg">
     <!-- Wings -->
     <ellipse class="bee-wing-l" cx="16" cy="30" rx="20" ry="10" fill="rgba(186,230,253,0.78)" transform="rotate(-25,16,30)"/>
@@ -3284,230 +3284,51 @@ async function loadLogs() {
 }
 
 // ────────────────────────────────────────────────────────────────────────────
-// Startup animation
+// Startup animation — jednostavna, robusna verzija
 // ────────────────────────────────────────────────────────────────────────────
 (function() {
-  const overlay  = document.getElementById('startup-overlay');
-  const beeEl    = document.getElementById('bee-el');
-  const bubble   = document.getElementById('speech-bubble');
-  const speechTx = document.getElementById('speech-text');
-  const glow     = document.getElementById('startup-glow');
-  const skipHint = document.getElementById('skip-hint');
   let done = false;
 
-  // ── Hex grid canvas ────────────────────────────────────────────────────────
-  function drawHex() {
-    const canvas = document.getElementById('hex-canvas');
-    const ctx = canvas.getContext('2d');
-    canvas.width  = window.innerWidth;
-    canvas.height = window.innerHeight;
-    const R = 34, W = R * Math.sqrt(3), H = R * 2;
-    const cols = Math.ceil(canvas.width  / W) + 2;
-    const rows = Math.ceil(canvas.height / (H * .75)) + 2;
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    for (let r = 0; r < rows; r++) {
-      for (let c = 0; c < cols; c++) {
-        const cx = c * W + (r % 2) * W * .5 - W;
-        const cy = r * H * .75 - H;
-        const alpha = (.04 + Math.random() * .08).toFixed(3);
-        ctx.strokeStyle = `rgba(59,130,246,${alpha})`;
-        ctx.lineWidth = .8;
-        ctx.beginPath();
-        for (let i = 0; i < 6; i++) {
-          const a = Math.PI / 3 * i - Math.PI / 6;
-          const px = cx + R * Math.cos(a), py = cy + R * Math.sin(a);
-          i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
-        }
-        ctx.closePath(); ctx.stroke();
-      }
-    }
-    // Animate random hex cells glowing
-    animateHex(canvas, ctx, R, W, H, cols, rows);
-  }
-
-  function animateHex(canvas, ctx, R, W, H, cols, rows) {
-    let t = 0;
-    const hexAnim = () => {
-      if (done) return;
-      t++;
-      if (t % 8 === 0) {
-        const r = Math.floor(Math.random() * rows);
-        const c = Math.floor(Math.random() * cols);
-        const cx = c * W + (r % 2) * W * .5 - W;
-        const cy = r * H * .75 - H;
-        ctx.strokeStyle = `rgba(251,191,36,${(.2 + Math.random() * .3).toFixed(2)})`;
-        ctx.lineWidth = 1.2;
-        ctx.beginPath();
-        for (let i = 0; i < 6; i++) {
-          const a = Math.PI / 3 * i - Math.PI / 6;
-          ctx.lineTo(cx + R * Math.cos(a), cy + R * Math.sin(a));
-        }
-        ctx.closePath(); ctx.stroke();
-        setTimeout(() => {
-          if (done) return;
-          ctx.strokeStyle = `rgba(59,130,246,0.06)`;
-          ctx.lineWidth = .8;
-          ctx.beginPath();
-          for (let i = 0; i < 6; i++) {
-            const a = Math.PI / 3 * i - Math.PI / 6;
-            ctx.lineTo(cx + R * Math.cos(a), cy + R * Math.sin(a));
-          }
-          ctx.closePath(); ctx.stroke();
-        }, 400);
-      }
-      requestAnimationFrame(hexAnim);
-    };
-    requestAnimationFrame(hexAnim);
-  }
-
-  // ── Buzzing sound ──────────────────────────────────────────────────────────
-  function buzz(duration) {
-    try {
-      const ctx = new (window.AudioContext || window.webkitAudioContext)();
-      const osc = ctx.createOscillator();
-      const gain = ctx.createGain();
-      const lfo = ctx.createOscillator();
-      const lfoG = ctx.createGain();
-      lfo.frequency.value = 85; lfoG.gain.value = 55;
-      lfo.connect(lfoG); lfoG.connect(osc.frequency);
-      osc.type = 'sawtooth'; osc.frequency.value = 240;
-      osc.connect(gain); gain.connect(ctx.destination);
-      gain.gain.setValueAtTime(0, ctx.currentTime);
-      gain.gain.linearRampToValueAtTime(.045, ctx.currentTime + .12);
-      gain.gain.setValueAtTime(.045, ctx.currentTime + duration - .35);
-      gain.gain.linearRampToValueAtTime(0, ctx.currentTime + duration);
-      lfo.start(); osc.start();
-      lfo.stop(ctx.currentTime + duration);
-      osc.stop(ctx.currentTime + duration);
-    } catch(e) {}
-  }
-
-  // ── Bee flight path (JS-driven for smooth bezier) ─────────────────────────
-  const W = window.innerWidth, H = window.innerHeight;
-  const cx = W / 2 - 36, cy = H / 2 - 42; // center landing spot
-
-  // Waypoints: off-screen start → wander → center
-  const waypoints = [
-    { x: -90,          y: -90,          rot:  35, sx:  1 },
-    { x: W * .35,      y: H * .08,      rot: -20, sx:  1 },
-    { x: W * .72,      y: H * .42,      rot:  25, sx: -1 },
-    { x: W * .12,      y: H * .58,      rot: -15, sx:  1 },
-    { x: W * .68,      y: H * .15,      rot:  30, sx: -1 },
-    { x: W * .25,      y: H * .72,      rot: -10, sx:  1 },
-    { x: cx,           y: cy,           rot:   0, sx:  1 },
-  ];
-
-  let wpIdx = 0, startT = null;
-  const SEG = 380; // ms per segment
-
-  function lerp(a, b, t) { return a + (b - a) * t; }
-  function easeInOut(t) { return t < .5 ? 2*t*t : -1+(4-2*t)*t; }
-
-  function flyBee(ts) {
-    if (done) return;
-    if (!startT) startT = ts;
-    const elapsed = ts - startT;
-    const seg = Math.floor(elapsed / SEG);
-    const t = easeInOut(Math.min((elapsed % SEG) / SEG, 1));
-
-    if (seg >= waypoints.length - 1) {
-      // Landed
-      const lp = waypoints[waypoints.length - 1];
-      beeEl.style.transform = `translate(${lp.x}px,${lp.y}px) rotate(0deg)`;
-      onLanded();
-      return;
-    }
-    const from = waypoints[Math.min(seg,     waypoints.length - 1)];
-    const to   = waypoints[Math.min(seg + 1, waypoints.length - 1)];
-    const x    = lerp(from.x, to.x, t);
-    const y    = lerp(from.y, to.y, t);
-    const rot  = lerp(from.rot, to.rot, t);
-    const sx   = t < .5 ? from.sx : to.sx;
-    beeEl.style.transform = `translate(${x}px,${y}px) rotate(${rot}deg) scaleX(${sx})`;
-    requestAnimationFrame(flyBee);
-  }
-
-  // ── Typewriter ────────────────────────────────────────────────────────────
-  const hour = new Date().getHours();
-  const greeting = hour < 12 ? 'Dobro jutro' : hour < 18 ? 'Dobar dan' : 'Dobro veče';
-  const msg = `${greeting}! Ja sam Pčela 🐝\nTvoj asistent za TVI evidenciju radnog vremena.`;
-
-  function typeWriter(text, el, i, cb) {
-    if (done) return;
-    if (i <= text.length) {
-      el.textContent = text.slice(0, i).replace(/\n/g, '\n');
-      el.innerHTML = el.textContent.replace(/\n/g, '<br>');
-      setTimeout(() => typeWriter(text, el, i + 1, cb), i === 0 ? 0 : 38);
-    } else { cb && cb(); }
-  }
-
-  // ── Sequence ──────────────────────────────────────────────────────────────
-  function onLanded() {
-    dbg('bee landed');
-    // Glow under bee
-    const lp = waypoints[waypoints.length - 1];
-    glow.style.left = (lp.x + 36 - 210) + 'px';
-    glow.style.top  = (lp.y + 42 - 210) + 'px';
-    glow.style.opacity = '1';
-
-    // Speech bubble next to bee
-    bubble.style.left = Math.min(lp.x + 85, W - 300) + 'px';
-    bubble.style.top  = Math.max(lp.y - 20, 10) + 'px';
-    bubble.classList.add('visible');
-
-    // Buzz landing chirp (short)
-    buzz(.4);
-
-    // Typewriter
-    typeWriter(msg, speechTx, 0, () => {
-      // After typing done, wait then dismiss
-      setTimeout(dismiss, 1600);
-    });
-  }
-
   function dismiss() {
-    dbg('dismiss() start, done=' + done, '#fbbf24');
     if (done) return;
     done = true;
-    // Odmah sakrij sve — ne čekaj animaciju, null-safe
-    ['startup-overlay','bee-el','speech-bubble','skip-hint'].forEach(id => {
-      const el = document.getElementById(id);
+    dbg('dismissed', '#4ade80');
+    // Odmah sakrij overlay
+    ['startup-overlay','bee-el','speech-bubble','skip-hint'].forEach(function(id) {
+      var el = document.getElementById(id);
       if (el) el.style.display = 'none';
     });
-    // Enable pull-to-refresh u APK-u
     try { if (window.AndroidApp) window.AndroidApp.enableRefresh(); } catch(e) {}
-    dbg('dismissed ✓', '#4ade80');
-    // Ukloni iz DOM-a nakon kratke pauze
-    setTimeout(() => {
-      ['startup-overlay','bee-el','speech-bubble','skip-hint'].forEach(id => {
-        try { const el = document.getElementById(id); if (el) el.remove(); } catch(e) {}
+    setTimeout(function() {
+      ['startup-overlay','bee-el','speech-bubble','skip-hint'].forEach(function(id) {
+        try { var el = document.getElementById(id); if (el) el.remove(); } catch(e) {}
       });
     }, 300);
   }
 
-  // Skip on tap/click — listener na document da uhvati i klik na bee-el
-  function skip() {
-    dbg('skip() called, done=' + done, '#fbbf24');
-    if (!done) dismiss();
-  }
-  document.addEventListener('click', skip);
-  document.addEventListener('touchend', skip, { passive: true });
+  // Tap/klik bilo gde → odmah dismiss
+  document.addEventListener('click', function() { dismiss(); });
+  document.addEventListener('touchend', function() { dismiss(); }, { passive: true });
 
-  // Garantovani fallback: ako animacija ne završi za 3s, forsiran dismiss
-  setTimeout(skip, 3000);
-
-  // Start
+  // Pčela se pojavi u centru, kratka animacija krila (CSS), pa after 1.5s auto-dismiss
   try {
-    drawHex();
-    beeEl.style.transform = `translate(-90px,-90px) rotate(35deg)`;
-    beeEl.style.display = 'block';
-    buzz(2.6);
-    dbg('animation start');
-    setTimeout(() => requestAnimationFrame(flyBee), 200);
-  } catch(e) {
-    dbg('IIFE error: ' + e.message, '#f87171');
-    skip();
-  }
+    var beeEl = document.getElementById('bee-el');
+    if (beeEl) {
+      beeEl.style.transition = 'opacity .4s';
+      beeEl.style.opacity = '0';
+      beeEl.style.display = 'block';
+      // Pozicioniranje CSS-om: position:fixed, left:50%, top:50%
+      // transform dovede u centar
+      beeEl.style.transform = 'translate(-36px,-42px) scale(1.2)';
+      setTimeout(function() {
+        if (done) return;
+        beeEl.style.opacity = '1';
+      }, 50);
+    }
+  } catch(e) { dbg('bee init err: ' + e.message, '#f87171'); }
+
+  // Garantovani auto-dismiss nakon 1.5s
+  setTimeout(dismiss, 1500);
 
 })();
 
