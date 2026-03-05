@@ -299,6 +299,18 @@ def _get_full_name(username: str) -> str:
     return username
 
 
+def _n(v, default: float = 0.0) -> float:
+    """Pretvori TVI numeričku vrednost (int/float/str s zarezom) u float."""
+    if isinstance(v, (int, float)):
+        return float(v)
+    if isinstance(v, str):
+        try:
+            return float(v.replace(",", "."))
+        except ValueError:
+            pass
+    return default
+
+
 def _connect_login(session: dict | None = None) -> MeteorDDP:
     if session:
         username = session["username"]
@@ -2992,11 +3004,11 @@ def _get_mileage_from_tvi(session: dict, target_date: date) -> list[dict]:
                     "doc_id":       item["_id"],
                     "car_name":     car_obj.get("name", ""),
                     "car_id":       car_id,
-                    "start_km":     item.get("startKm", 0),
-                    "end_km":       item.get("endKm", 0),
-                    "amount":       item.get("amount", 0),
-                    "unit_price":   item.get("unitPrice", 0),
-                    "total":        round(item.get("total", 0), 2),
+                    "start_km":     int(_n(item.get("startKm"))),
+                    "end_km":       int(_n(item.get("endKm"))),
+                    "amount":       _n(item.get("amount")),
+                    "unit_price":   _n(item.get("unitPrice")),
+                    "total":        round(_n(item.get("total")), 2),
                     "project_name": proj["name"],
                     "activities_id": act_id,
                     "requests_id":  req_id,
@@ -3106,15 +3118,6 @@ async def mileage_car_report(
             d_ms = s.get("date", {}).get("$date", 0) if isinstance(s.get("date"), dict) else 0
             # Lokalno vreme (server je CET)
             d_str = datetime.fromtimestamp(d_ms / 1000).strftime("%d.%m.%Y %H:%M") if d_ms else ""
-            def _n(v, default=0.0):
-                if isinstance(v, (int, float)):
-                    return float(v)
-                if isinstance(v, str):
-                    try:
-                        return float(v.replace(",", "."))
-                    except ValueError:
-                        pass
-                return default
             amt = _n(s.get("amount"))
             tot = _n(s.get("total"))
             steps.append({
