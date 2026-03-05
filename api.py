@@ -2890,7 +2890,20 @@ def _ensure_mileage_table():
             conn.execute(f"ALTER TABLE mileage_log ADD COLUMN {col} {coltype}")
         except Exception:
             pass
-    conn.execute("CREATE INDEX IF NOT EXISTS idx_mileage_doc ON mileage_log(doc_id)")
+    # Migracija: cleanup duplikata po doc_id i dodaj UNIQUE index (ako već nije)
+    try:
+        conn.execute("""
+            DELETE FROM mileage_log WHERE rowid NOT IN (
+                SELECT MAX(rowid) FROM mileage_log
+                WHERE doc_id IS NOT NULL GROUP BY doc_id
+            ) AND doc_id IS NOT NULL
+        """)
+        conn.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_mileage_doc_unique "
+            "ON mileage_log(doc_id) WHERE doc_id IS NOT NULL"
+        )
+    except Exception:
+        pass
     conn.commit()
     conn.close()
 
@@ -3035,12 +3048,7 @@ async def get_mileage(
         d = date.today()
 
     def _run():
-        try:
-            entries = _get_mileage_from_tvi(session, d)
-        except Exception:
-            # Fallback: lokalna SQLite keš
-            date_str = d.strftime("%Y-%m-%d")
-            entries = _get_mileage_log(session["username"], date_str)
+        entries = _get_mileage_from_tvi(session, d)
         total_km  = sum(e["amount"] for e in entries)
         total_din = round(sum(e["total"] for e in entries), 2)
         return {"entries": entries, "total_km": total_km, "total_din": total_din}
