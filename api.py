@@ -106,15 +106,18 @@ def _log_event(user: str, ip: str, action: str, details: dict, status: str = "ok
 _LAST_SYNC_FILE = BASE_DIR / "projects" / "last_sync.json"
 
 
-def _write_last_sync(total: int, domains: dict, mode: str) -> None:
+def _write_last_sync(total: int, domains: dict, mode: str,
+                     new_total: int = 0, new_domains: dict | None = None) -> None:
     """Upisuje info o poslednjoj sinhronizaciji u JSON fajl i u log."""
     ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    data = {"ts": ts, "total": total, "domains": domains, "mode": mode}
+    data = {"ts": ts, "total": total, "domains": domains, "mode": mode,
+            "new_total": new_total, "new_domains": new_domains or {}}
     _LAST_SYNC_FILE.parent.mkdir(exist_ok=True)
     with open(_LAST_SYNC_FILE, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False)
     _log_event("system" if mode == "auto" else MASTER_USER, "localhost",
-               "sync", {"total": total, "mode": mode})
+               "sync", {"total": total, "new_total": new_total,
+                        "new_domains": new_domains or {}, "mode": mode})
 
 
 def _read_last_sync() -> dict | None:
@@ -1461,6 +1464,7 @@ def _sync_projects_blocking(session: dict | None = None,
     conn.commit()
 
     totals = {}
+    new_totals = {}
     for domain_idx, (dc, dn) in enumerate(SYNC_DOMAINS):
         pct_start = int(domain_idx / total_domains * 100)
         _cb({"stage": "domain_start", "domain": dn,
@@ -1505,6 +1509,16 @@ def _sync_projects_blocking(session: dict | None = None,
                 doc["_id"], str(doc.get("activityNumber", "")),
                 doc.get("name", ""), dc, dn, req_id, fetched_at,
             ))
+
+        # Broji nove projekte (ID-ovi koji nisu bili u bazi pre inserта)
+        fetched_ids = {r[0] for r in rows}
+        existing_ids = {
+            row[0] for row in conn.execute(
+                "SELECT id FROM projects WHERE domain_code = ?", (dc,)
+            ).fetchall()
+        }
+        new_count = len(fetched_ids - existing_ids)
+
         conn.executemany(
             "INSERT OR REPLACE INTO projects "
             "(id, activity_number, name, domain_code, domain_name, requests_id, fetched_at) "
@@ -1513,19 +1527,22 @@ def _sync_projects_blocking(session: dict | None = None,
         )
         conn.commit()
         totals[dn] = len(all_docs)
+        new_totals[dn] = new_count
 
         pct_end = int((domain_idx + 1) / total_domains * 100)
         _cb({"stage": "domain_done", "domain": dn,
              "domain_idx": domain_idx + 1, "domain_total": total_domains,
-             "count": len(all_docs), "pct": pct_end})
+             "count": len(all_docs), "new": new_count, "pct": pct_end})
         time.sleep(PAUSE_SEC)
 
     conn.close()
     total = sum(totals.values())
-    _cb({"stage": "finished", "total": total, "domains": totals,
-         "fetched_at": fetched_at})
+    new_grand = sum(new_totals.values())
+    _cb({"stage": "finished", "total": total, "new_total": new_grand,
+         "domains": totals, "fetched_at": fetched_at})
     return {"success": True, "fetched_at": fetched_at,
-            "db_path": str(DB_PATH), "total": total, "domains": totals}
+            "db_path": str(DB_PATH), "total": total, "domains": totals,
+            "new_total": new_grand, "new_domains": new_totals}
 
 
 # ── Sync automobila (items) u SQLite ──────────────────────────────────────────
@@ -1837,7 +1854,9 @@ def _auto_sync_run() -> None:
     _log_event("system", "localhost", "auto-sync", {"detail": "pokretanje"})
     try:
         result = _sync_projects_blocking(session=None)
-        _write_last_sync(result["total"], result["domains"], mode="auto")
+        _write_last_sync(result["total"], result["domains"], mode="auto",
+                         new_total=result.get("new_total", 0),
+                         new_domains=result.get("new_domains"))
     except Exception as e:
         _log_event("system", "localhost", "auto-sync",
                    {"error": str(e)}, status="error")
@@ -1884,7 +1903,9 @@ async def sync(session: dict = Depends(check_auth)):
 
     def _run():
         result = _sync_projects_blocking(session)
-        _write_last_sync(result["total"], result["domains"], mode="manual")
+        _write_last_sync(result["total"], result["domains"], mode="manual",
+                         new_total=result.get("new_total", 0),
+                         new_domains=result.get("new_domains"))
         return result
 
     try:
@@ -1904,7 +1925,9 @@ async def sync_stream(session: dict = Depends(check_auth)):
     def _run():
         try:
             result = _sync_projects_blocking(session, progress_cb=q.put)
-            _write_last_sync(result["total"], result["domains"], mode="manual")
+            _write_last_sync(result["total"], result["domains"], mode="manual",
+                             new_total=result.get("new_total", 0),
+                             new_domains=result.get("new_domains"))
         except Exception as e:
             q.put({"stage": "error", "detail": str(e)})
 

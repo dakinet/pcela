@@ -3177,8 +3177,9 @@ function toggleAdminUsers() {
 const _ACTION_LABELS = {
   'log': 'upis', 'parse-voice': 'glas', 'delete': 'brisanje',
   'delete-day': 'briši dan', 'auth': 'auth', 'login': 'login',
-  'mileage': 'km', 'auto-sync': 'sync', 'auto-sync-cars': 'sync-auta',
-  'auto-sync-timesheets': 'sync-rv', 'scheduler': 'scheduler',
+  'mileage': 'km', 'sync': 'sync-projekata', 'auto-sync': 'sync-start',
+  'auto-sync-cars': 'sync-auta', 'auto-sync-timesheets': 'sync-rv',
+  'scheduler': 'scheduler',
   'tvi_employees': 'chat:zaposleni', 'tvi_cars': 'chat:auta',
   'tvi_mileage': 'chat:km', 'tvi_licna_karta': 'chat:lk',
   'tvi_birthdays': 'chat:rodjendani', 'tvi_timesheet_stats': 'chat:stat',
@@ -3195,6 +3196,18 @@ function _logSummary(e) {
     return `${e.datum||'?'} · obrisano: ${e.deleted??'?'}`;
   if (e.action === 'auth')
     return e.detail || '';
+  if (e.action === 'sync') {
+    const newPart = e.new_total > 0 ? ` · 🆕 ${e.new_total} novih` : ' · bez novih';
+    return `ukupno ${e.total||'?'} projekata${newPart} (${e.mode||'?'})`;
+  }
+  if (e.action === 'auto-sync')
+    return e.detail || e.error || '';
+  if (e.action === 'scheduler')
+    return `sledeća auto-sync: ${e.next_sync||'?'} (za ${e.sleep_min||'?'} min)`;
+  if (e.action === 'auto-sync-cars')
+    return e.count != null ? `${e.count} automobila` : (e.error || '');
+  if (e.action === 'auto-sync-timesheets')
+    return e.records != null ? `${e.records} zapisa, ${e.users||0} korisnika` : (e.error || '');
   return JSON.stringify(e).slice(0,80);
 }
 
@@ -3222,8 +3235,11 @@ async function loadSyncStatus() {
     }
     const ls = d.last_sync;
     const mode = ls.mode === 'auto' ? '🤖 automatski' : '👆 ručno';
+    const newPart = ls.new_total > 0
+      ? ` &nbsp;·&nbsp; <span style="color:#059669;font-weight:700">🆕 ${ls.new_total} novih projekata</span>`
+      : (ls.new_total === 0 ? ' &nbsp;·&nbsp; bez novih projekata' : '');
     el.innerHTML =
-      `Poslednja sinhronizacija: <strong>${ls.ts}</strong> — ${ls.total} projekata (${mode})` +
+      `Poslednja sinhronizacija: <strong>${ls.ts}</strong> — ${ls.total} projekata (${mode})${newPart}` +
       (d.next_auto_sync ? ` &nbsp;|&nbsp; Sledeća auto-sync: <strong>${d.next_auto_sync}</strong>` : '');
   } catch {
     el.textContent = '';
