@@ -362,14 +362,15 @@ def _lookup_project_db(activity_number: str) -> tuple[str, str, str] | None:
 def _record_to_dict(r: dict) -> dict:
     raw_id = r.get("_id")
     rec_id = _oid_value(raw_id) if raw_id is not None else None
+    et = r.get("endTime", {})
     return {
         "id": rec_id or None,
-        "start": _ms_to_str(r["startTime"]["$date"]),
-        "end": _ms_to_str(r["endTime"]["$date"]),
-        "hours": round(r["hours"], 4),
+        "start": _ms_to_str(r.get("startTime", {}).get("$date", 0)),
+        "end": _ms_to_str(et["$date"]) if et else None,
+        "hours": round(_n(r.get("hours", 0)), 4),
         "project": r.get("requestName", ""),
         "comment": r.get("comment") or "",
-        "total": round(r["total"]),
+        "total": round(_n(r.get("total", 0))),
     }
 
 
@@ -380,6 +381,7 @@ def _is_other_user_project(proj_name: str, current_full_name: str) -> bool:
     lažno filtriranje projekata kao što je 'DRŽAVNI ARHIV SRBIJE...'.
     """
     def _norm(s: str) -> str:
+        s = s.replace("Đ", "Dj").replace("đ", "dj")
         return ''.join(
             c for c in unicodedata.normalize('NFD', s.lower())
             if unicodedata.category(c) != 'Mn'
@@ -690,7 +692,7 @@ def _build_user_context_sync(session: dict) -> str:
             st_ms = r["startTime"]["$date"]
             rid = today_id_map.get(st_ms, "")
             lines.append(
-                f"  - [{rid}] {_ms_to_str(st_ms)}–{_ms_to_str(r['endTime']['$date'])}"
+                f"  - [{rid}] {_ms_to_str(st_ms)}–{_ms_to_str(r.get('endTime', {}).get('$date', 0))}"
                 f" | {r.get('requestName', '?')} | {r.get('comment', '') or '-'}"
             )
     else:
@@ -719,7 +721,7 @@ def _build_user_context_sync(session: dict) -> str:
             dh = round(sum(r["hours"] for r in drecs), 2)
             entries = "; ".join(
                 f"[{_oid_value(r.get('_id',''))}] "
-                f"{_ms_to_str(r['startTime']['$date'])}–{_ms_to_str(r['endTime']['$date'])}"
+                f"{_ms_to_str(r.get('startTime',{}).get('$date',0))}–{_ms_to_str(r.get('endTime',{}).get('$date',0))}"
                 f" {r.get('requestName','?')}"
                 + (f" ({r.get('comment','')})" if r.get("comment") else "")
                 for r in drecs
@@ -980,12 +982,14 @@ async def status(
         if records:
             result["records"] = [
                 _record_to_dict(r)
-                for r in sorted(records, key=lambda x: x["startTime"]["$date"])
+                for r in sorted(records, key=lambda x: x.get("startTime", {}).get("$date", 0))
             ]
-            result["total_hours"] = round(sum(r["hours"] for r in records), 4)
-            result["total_rsd"] = round(sum(r["total"] for r in records))
-            records_sorted = sorted(records, key=lambda x: x["endTime"]["$date"])
-            result["last_end"] = _ms_to_str(records_sorted[-1]["endTime"]["$date"])
+            result["total_hours"] = round(sum(_n(r.get("hours", 0)) for r in records), 4)
+            result["total_rsd"] = round(sum(_n(r.get("total", 0)) for r in records))
+            closed = [r for r in records if r.get("endTime")]
+            if closed:
+                records_sorted = sorted(closed, key=lambda x: x["endTime"]["$date"])
+                result["last_end"] = _ms_to_str(records_sorted[-1]["endTime"]["$date"])
         return result
 
     try:
@@ -1042,8 +1046,8 @@ async def day_with_ids(
             "total_hours": round(sum(r["hours"] for r in records), 4),
             "total_rsd": round(sum(r["total"] for r in records)),
             "last_end": _ms_to_str(
-                max(r["endTime"]["$date"] for r in records)
-            ) if records else None,
+                max(r["endTime"]["$date"] for r in records if r.get("endTime"))
+            ) if any(r.get("endTime") for r in records) else None,
         }
 
     try:
@@ -1115,7 +1119,11 @@ async def log(req: LogRequest, request: Request, session: dict = Depends(check_a
             if not existing:
                 ddp.close()
                 raise ValueError("Nema zapisa za danas. Navedi start_time za prvi unos dana.")
-            start_ms = max(r["endTime"]["$date"] for r in existing)
+            closed_existing = [r for r in existing if r.get("endTime")]
+            if not closed_existing:
+                ddp.close()
+                raise ValueError("Nema završenih zapisa za danas. Navedi start_time.")
+            start_ms = max(r["endTime"]["$date"] for r in closed_existing)
 
         if end_ms <= start_ms:
             ddp.close()
@@ -1125,9 +1133,9 @@ async def log(req: LogRequest, request: Request, session: dict = Depends(check_a
 
         # Provera preklapanja sa postojećim unosima za taj dan
         for r in existing:
-            r_start = r["startTime"]["$date"]
-            r_end   = r["endTime"]["$date"]
-            if start_ms < r_end and end_ms > r_start:
+            r_start = r.get("startTime", {}).get("$date", 0)
+            r_end   = r.get("endTime", {}).get("$date", 0)
+            if r_end and start_ms < r_end and end_ms > r_start:
                 ddp.close()
                 raise ValueError(
                     f"Preklapanje sa postojećim unosom "
@@ -1585,20 +1593,25 @@ def _match_driver(car_name: str) -> str:
     return ""
 
 
+def _name_key(name: str) -> str:
+    """Normalizuje ime za poređenje: đ→dj, dijakritici→ascii, lowercase.
+    'Đerović'/'Djerovic'/'Đеровиħ' svi daju isti ključ."""
+    s = name.replace("Đ", "Dj").replace("đ", "dj")
+    n = unicodedata.normalize("NFD", s.lower())
+    return "".join(c for c in n if unicodedata.category(c) != "Mn")
+
+
 def _find_my_car_id(full_name: str, cars: list[dict]) -> str | None:
     """Pronalazi ID automobila zaduženog za korisnika po imenu."""
     if not full_name:
         return None
-    fn_norm = unicodedata.normalize("NFD", full_name.lower())
-    fn_clean = "".join(c for c in fn_norm if unicodedata.category(c) != "Mn")
+    fn_key = _name_key(full_name)
     for car in cars:
         driver_cyr = car.get("driver", "")
         if not driver_cyr:
             continue
-        driver_lat = _cyr_to_lat(driver_cyr).lower()
-        dl_norm = unicodedata.normalize("NFD", driver_lat)
-        dl_clean = "".join(c for c in dl_norm if unicodedata.category(c) != "Mn")
-        if dl_clean == fn_clean:
+        driver_key = _name_key(_cyr_to_lat(driver_cyr))
+        if driver_key == fn_key:
             return car["_id"]
     return None
 
@@ -2664,8 +2677,9 @@ def _find_km_projects(full_name: str) -> list[dict]:
     current_year = str(date.today().year)
 
     def _norm(t: str) -> str:
+        s = t.replace("Đ", "Dj").replace("đ", "dj")
         return "".join(
-            c for c in unicodedata.normalize("NFD", t.lower())
+            c for c in unicodedata.normalize("NFD", s.lower())
             if unicodedata.category(c) != "Mn"
         )
 
@@ -2968,53 +2982,126 @@ def _get_mileage_log(username: str, target_date: str) -> list[dict]:
 
 
 def _get_mileage_from_tvi(session: dict, target_date: date) -> list[dict]:
-    """Povlači km unose za korisnika i datum direktno iz TVI (MongoDB).
-    Upsertuje u lokalnu SQLite kao keš. Vraća listu dict-ova."""
-    username = session["username"]
-    user_id  = session["user_id"]
-    full_name = session.get("full_name", "")
-    date_str = target_date.strftime("%Y-%m-%d")
+    """Povlači SVE km unose za korisnikov auto i datum direktno iz TVI (MongoDB).
 
-    km_projs = _find_km_projects(full_name)
-    if not km_projs:
-        return []
+    Logika u dva koraka:
+    1. km_projs (projekti 'Automobil') — brzo, direktno
+    2. car_km_report za taj dan → pronalazi ostale projekte (npr. Odbojkaški) →
+       traži activities_id u lokalnoj SQLite → dohvata request_items sa doc_id
+
+    Svi pronađeni unosi su editabilni (imaju doc_id). Filtrira po car_id korisnika.
+    """
+    username  = session["username"]
+    full_name = session.get("full_name", "")
+    date_str  = target_date.strftime("%Y-%m-%d")
 
     day_start_ms = int(datetime(target_date.year, target_date.month, target_date.day, 0, 0).timestamp() * 1000)
     day_end_ms   = int(datetime(target_date.year, target_date.month, target_date.day, 23, 59, 59).timestamp() * 1000)
 
+    km_projs   = _find_km_projects(full_name)
+    cars       = _load_cars()
+    my_car_id  = _find_my_car_id(full_name, cars)
+
+    if not km_projs and not my_car_id:
+        return []
+
+    def _parse_item(item: dict, proj_name: str, act_id: str) -> dict | None:
+        """Pretvara TVI request item u dict za prikaz. None ako nije za traženi dan."""
+        item_date = item.get("date", {})
+        item_ms   = item_date.get("$date", 0) if isinstance(item_date, dict) else 0
+        if not (day_start_ms <= item_ms <= day_end_ms):
+            return None
+        car_obj     = item.get("item", {})
+        car_id_raw  = car_obj.get("_id", {})
+        item_car_id = car_id_raw.get("$value", "") if isinstance(car_id_raw, dict) else str(car_id_raw)
+        req_id_raw  = item.get("requests_id", {})
+        req_id      = req_id_raw.get("$value", "") if isinstance(req_id_raw, dict) else str(req_id_raw)
+        return {
+            "doc_id":        item["_id"],
+            "car_name":      car_obj.get("name", ""),
+            "car_id":        item_car_id,
+            "start_km":      int(_n(item.get("startKm"))),
+            "end_km":        int(_n(item.get("endKm"))),
+            "amount":        _n(item.get("amount")),
+            "unit_price":    _n(item.get("unitPrice")),
+            "total":         round(_n(item.get("total")), 2),
+            "project_name":  proj_name,
+            "activities_id": act_id,
+            "requests_id":   req_id,
+            "comment":       item.get("comment") or "",
+            "created_at":    date_str,
+        }
+
     ddp = _connect_login(session)
     try:
         entries: list[dict] = []
+        processed_act_ids: set[str] = set()
+
+        # ── Korak 1: km_projs (Automobil projekti) ──────────────────────────
         for proj in km_projs:
             act_id = proj["activities_id"]
-            items = ddp.get_request_items(activities_id=act_id, timeout=12.0)
-            for item in items:
-                # Projekat je personalizovan po imenu — nema potrebe za user filterom
-                # (admin moze unositi za druge, ali to je rijedak slučaj)
-                item_date = item.get("date", {})
-                item_ms = item_date.get("$date", 0) if isinstance(item_date, dict) else 0
-                if not (day_start_ms <= item_ms <= day_end_ms):
-                    continue
-                car_obj = item.get("item", {})
-                car_id_raw = car_obj.get("_id", {})
-                car_id = car_id_raw.get("$value", "") if isinstance(car_id_raw, dict) else str(car_id_raw)
-                req_id_raw = item.get("requests_id", {})
-                req_id = req_id_raw.get("$value", "") if isinstance(req_id_raw, dict) else str(req_id_raw)
-                entries.append({
-                    "doc_id":       item["_id"],
-                    "car_name":     car_obj.get("name", ""),
-                    "car_id":       car_id,
-                    "start_km":     int(_n(item.get("startKm"))),
-                    "end_km":       int(_n(item.get("endKm"))),
-                    "amount":       _n(item.get("amount")),
-                    "unit_price":   _n(item.get("unitPrice")),
-                    "total":        round(_n(item.get("total")), 2),
-                    "project_name": proj["name"],
-                    "activities_id": act_id,
-                    "requests_id":  req_id,
-                    "comment":      item.get("comment") or "",
-                    "created_at":   date_str,
-                })
+            processed_act_ids.add(act_id)
+            for item in ddp.get_request_items(activities_id=act_id, timeout=12.0):
+                e = _parse_item(item, proj["name"], act_id)
+                if e:
+                    entries.append(e)
+
+        # ── Korak 2: ostali projekti koji su koristili korisnikov auto tog dana ──
+        # car_id: primarno iz _find_my_car_id; ako ne uspije, uzmi iz već nađenih unosa
+        effective_car_id = my_car_id or (entries[0]["car_id"] if entries else None)
+        if effective_car_id:
+            try:
+                # Proširi opseg za ±1 dan da uhvati unose unesene oko ponoći
+                prev_day_ms = day_start_ms - 86_400_000
+                next_day_ms = day_end_ms   + 86_400_000
+                cr = ddp.car_km_report(effective_car_id, prev_day_ms, next_day_ms)
+                if cr and "result" in cr:
+                    steps = cr["result"].get("activitySteps", [])
+                    # Filtriraj samo korake koji stvarno padaju u traženi dan
+                    day_steps = []
+                    for s in steps:
+                        s_date = s.get("date", {})
+                        s_ms   = s_date.get("$date", 0) if isinstance(s_date, dict) else 0
+                        if day_start_ms <= s_ms <= day_end_ms:
+                            day_steps.append(s)
+
+                    if day_steps:
+                        # Skupi requestNumber-e i requestName-e za lookup
+                        req_numbers = {str(s.get("requestNumber", "")).strip() for s in day_steps if s.get("requestNumber")}
+                        req_names   = {str(s.get("requestName",   "")).strip() for s in day_steps if s.get("requestName")}
+
+                        # Pronađi activities_id u lokalnoj SQLite — po broju ILI po imenu
+                        conn_db = sqlite3.connect(PROJECTS_DB)
+                        extra_rows: list = []
+                        if req_numbers:
+                            ph = ",".join("?" * len(req_numbers))
+                            extra_rows += conn_db.execute(
+                                f"SELECT id, name FROM projects WHERE activity_number IN ({ph})",
+                                list(req_numbers),
+                            ).fetchall()
+                        if req_names:
+                            for rname in req_names:
+                                extra_rows += conn_db.execute(
+                                    "SELECT id, name FROM projects WHERE name = ?",
+                                    (rname,),
+                                ).fetchall()
+                        conn_db.close()
+
+                        for row in extra_rows:
+                            act_id    = row[0]
+                            proj_name = row[1] or ""
+                            if not act_id or act_id in processed_act_ids:
+                                continue
+                            processed_act_ids.add(act_id)
+                            try:
+                                for item in ddp.get_request_items(activities_id=act_id, timeout=12.0):
+                                    e = _parse_item(item, proj_name, act_id)
+                                    if e and e["car_id"] == effective_car_id:
+                                        entries.append(e)
+                            except Exception:
+                                pass
+            except Exception:
+                pass
     finally:
         ddp.close()
 
@@ -3023,10 +3110,9 @@ def _get_mileage_from_tvi(session: dict, target_date: date) -> list[dict]:
         _ensure_mileage_table()
         conn = sqlite3.connect(PROJECTS_DB, timeout=30)
         conn.execute("PRAGMA journal_mode=WAL")
-        # Obriši stare zapise za ovaj user+datum (koji možda nemaju doc_id)
         conn.execute(
             "DELETE FROM mileage_log WHERE username=? AND date=? AND doc_id IS NULL",
-            (username, date_str)
+            (username, date_str),
         )
         for e in entries:
             conn.execute(
@@ -3042,7 +3128,7 @@ def _get_mileage_from_tvi(session: dict, target_date: date) -> list[dict]:
         conn.commit()
         conn.close()
 
-    return sorted(entries, key=lambda x: x.get("doc_id", ""))
+    return sorted(entries, key=lambda x: x.get("start_km", 0))
 
 
 @app.get("/api/mileage")
@@ -3073,17 +3159,45 @@ async def mileage_last_km(
     car_id: str = Query(..., description="ID automobila"),
     session: dict = Depends(check_auth),
 ):
-    """Vraća poslednju krajnju kilometražu za zadati auto (svi korisnici, iz SQLite keša)."""
-    _ensure_mileage_table()
-    conn = sqlite3.connect(PROJECTS_DB, timeout=30)
-    conn.execute("PRAGMA journal_mode=WAL")
-    row = conn.execute(
-        "SELECT end_km FROM mileage_log WHERE car_id = ? "
-        "ORDER BY date DESC, end_km DESC, id DESC LIMIT 1",
-        (car_id,),
-    ).fetchone()
-    conn.close()
-    return {"last_km": row[0] if row else None}
+    """Vraća poslednju krajnju kilometražu za zadati auto (TVI car-report, sve aktivnosti).
+    Uvijek povlači iz TVI da bi uhvatio i unose iz projekata koji nisu 'Automobil' projekti.
+    Fallback: SQLite keš."""
+    def _run():
+        try:
+            ed = date.today()
+            sd = ed - timedelta(days=30)
+            sd_ms = int(datetime(sd.year, sd.month, sd.day, 0, 0).timestamp() * 1000)
+            ed_ms = int(datetime(ed.year, ed.month, ed.day, 23, 59, 59).timestamp() * 1000)
+            ddp = _connect_login(session)
+            try:
+                result = ddp.car_km_report(car_id, sd_ms, ed_ms)
+            finally:
+                ddp.close()
+            if result and "result" in result:
+                steps = result["result"].get("activitySteps", [])
+                if steps:
+                    # Sortiraj po datumu pa uzmi end_km od posljednjeg unosa
+                    sorted_steps = sorted(
+                        steps,
+                        key=lambda x: (x.get("date", {}).get("$date", 0)
+                                       if isinstance(x.get("date"), dict) else 0)
+                    )
+                    last_km = int(_n(sorted_steps[-1].get("endKm")))
+                    return {"last_km": last_km}
+        except Exception:
+            pass
+        # Fallback: SQLite keš (nepotpun — može nedostajati unosi iz ostalih projekata)
+        _ensure_mileage_table()
+        conn = sqlite3.connect(PROJECTS_DB, timeout=30)
+        conn.execute("PRAGMA journal_mode=WAL")
+        row = conn.execute(
+            "SELECT end_km FROM mileage_log WHERE car_id = ? ORDER BY date DESC, end_km DESC LIMIT 1",
+            (car_id,),
+        ).fetchone()
+        conn.close()
+        return {"last_km": row[0] if row else None}
+
+    return await asyncio.to_thread(_run)
 
 
 @app.get("/api/mileage/car-report")
@@ -3161,65 +3275,117 @@ async def mileage_history(
         full_name = session.get("full_name", "")
         sd_str    = sd.strftime("%Y-%m-%d")
         ed_str    = ed.strftime("%Y-%m-%d")
+        sd_ms = int(datetime(sd.year, sd.month, sd.day, 0, 0).timestamp() * 1000)
+        ed_ms = int(datetime(ed.year, ed.month, ed.day, 23, 59, 59).timestamp() * 1000)
 
-        # Pokušaj TVI fetch
+        km_projs  = _find_km_projects(full_name)
+        cars      = _load_cars()
+        my_car_id = _find_my_car_id(full_name, cars)
+
+        def _item_to_entry(item: dict, proj_name: str, act_id: str) -> dict | None:
+            item_date = item.get("date", {})
+            item_ms   = item_date.get("$date", 0) if isinstance(item_date, dict) else 0
+            if not (sd_ms <= item_ms <= ed_ms):
+                return None
+            car_obj    = item.get("item", {})
+            car_id_raw = car_obj.get("_id", {})
+            item_car_id = car_id_raw.get("$value", "") if isinstance(car_id_raw, dict) else str(car_id_raw)
+            req_id_raw = item.get("requests_id", {})
+            req_id     = req_id_raw.get("$value", "") if isinstance(req_id_raw, dict) else str(req_id_raw)
+            item_day   = datetime.fromtimestamp(item_ms / 1000).strftime("%Y-%m-%d")
+            return {
+                "doc_id":        item["_id"],
+                "car_name":      car_obj.get("name", ""),
+                "car_id":        item_car_id,
+                "start_km":      int(_n(item.get("startKm"))),
+                "end_km":        int(_n(item.get("endKm"))),
+                "amount":        _n(item.get("amount")),
+                "unit_price":    _n(item.get("unitPrice")),
+                "total":         round(_n(item.get("total")), 2),
+                "project_name":  proj_name,
+                "activities_id": act_id,
+                "requests_id":   req_id,
+                "comment":       item.get("comment") or "",
+                "date":          item_day,
+                "created_at":    item_day,
+            }
+
         all_entries: list[dict] = []
         try:
-            km_projs = _find_km_projects(full_name)
-            if km_projs:
-                sd_ms = int(datetime(sd.year, sd.month, sd.day, 0, 0).timestamp() * 1000)
-                ed_ms = int(datetime(ed.year, ed.month, ed.day, 23, 59, 59).timestamp() * 1000)
-                ddp = _connect_login(session)
-                try:
-                    for proj in km_projs:
-                        items = ddp.get_request_items(activities_id=proj["activities_id"], timeout=15.0)
-                        for item in items:
-                            item_date = item.get("date", {})
-                            item_ms = item_date.get("$date", 0) if isinstance(item_date, dict) else 0
-                            if not (sd_ms <= item_ms <= ed_ms):
-                                continue
-                            car_obj = item.get("item", {})
-                            car_id_raw = car_obj.get("_id", {})
-                            car_id = car_id_raw.get("$value", "") if isinstance(car_id_raw, dict) else str(car_id_raw)
-                            req_id_raw = item.get("requests_id", {})
-                            req_id = req_id_raw.get("$value", "") if isinstance(req_id_raw, dict) else str(req_id_raw)
-                            item_day = datetime.utcfromtimestamp(item_ms / 1000).strftime("%Y-%m-%d")
-                            all_entries.append({
-                                "doc_id":        item["_id"],
-                                "car_name":      car_obj.get("name", ""),
-                                "car_id":        car_id,
-                                "start_km":      item.get("startKm", 0),
-                                "end_km":        item.get("endKm", 0),
-                                "amount":        item.get("amount", 0),
-                                "unit_price":    item.get("unitPrice", 0),
-                                "total":         round(item.get("total", 0), 2),
-                                "project_name":  proj["name"],
-                                "activities_id": proj["activities_id"],
-                                "requests_id":   req_id,
-                                "comment":       item.get("comment") or "",
-                                "date":          item_day,
-                                "created_at":    item_day,
-                            })
-                finally:
-                    ddp.close()
-                # Upsert keš
-                if all_entries:
-                    _ensure_mileage_table()
-                    conn = sqlite3.connect(PROJECTS_DB, timeout=30)
-                    conn.execute("PRAGMA journal_mode=WAL")
-                    for e in all_entries:
-                        conn.execute(
-                            "INSERT OR REPLACE INTO mileage_log "
-                            "(doc_id, username, car_id, car_name, start_km, end_km, amount, unit_price, total,"
-                            " project_name, activities_id, requests_id, date, created_at, comment)"
-                            " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                            (e["doc_id"], username, e["car_id"], e["car_name"],
-                             e["start_km"], e["end_km"], e["amount"], e["unit_price"], e["total"],
-                             e["project_name"], e["activities_id"], e["requests_id"],
-                             e["date"], datetime.now().strftime("%Y-%m-%d %H:%M:%S"), e["comment"]),
-                        )
-                    conn.commit()
-                    conn.close()
+            ddp = _connect_login(session)
+            try:
+                processed_act_ids: set[str] = set()
+
+                # ── Korak 1: km_projs (Automobil projekti) ──────────────────
+                for proj in km_projs:
+                    act_id = proj["activities_id"]
+                    processed_act_ids.add(act_id)
+                    for item in ddp.get_request_items(activities_id=act_id, timeout=15.0):
+                        e = _item_to_entry(item, proj["name"], act_id)
+                        if e:
+                            all_entries.append(e)
+
+                # ── Korak 2: ostali projekti s korisnikovim autom u periodu ──
+                effective_car_id = my_car_id or (all_entries[0]["car_id"] if all_entries else None)
+                if effective_car_id:
+                    try:
+                        cr = ddp.car_km_report(effective_car_id, sd_ms, ed_ms)
+                        if cr and "result" in cr:
+                            steps = cr["result"].get("activitySteps", [])
+                            req_numbers = {str(s.get("requestNumber", "")).strip() for s in steps if s.get("requestNumber")}
+                            req_names   = {str(s.get("requestName",   "")).strip() for s in steps if s.get("requestName")}
+
+                            conn_db = sqlite3.connect(PROJECTS_DB)
+                            extra_rows: list = []
+                            if req_numbers:
+                                ph = ",".join("?" * len(req_numbers))
+                                extra_rows += conn_db.execute(
+                                    f"SELECT id, name FROM projects WHERE activity_number IN ({ph})",
+                                    list(req_numbers),
+                                ).fetchall()
+                            if req_names:
+                                for rname in req_names:
+                                    extra_rows += conn_db.execute(
+                                        "SELECT id, name FROM projects WHERE name = ?", (rname,),
+                                    ).fetchall()
+                            conn_db.close()
+
+                            for row in extra_rows:
+                                act_id    = row[0]
+                                proj_name = row[1] or ""
+                                if not act_id or act_id in processed_act_ids:
+                                    continue
+                                processed_act_ids.add(act_id)
+                                try:
+                                    for item in ddp.get_request_items(activities_id=act_id, timeout=15.0):
+                                        e = _item_to_entry(item, proj_name, act_id)
+                                        if e and e["car_id"] == effective_car_id:
+                                            all_entries.append(e)
+                                except Exception:
+                                    pass
+                    except Exception:
+                        pass
+            finally:
+                ddp.close()
+
+            # Upsert keš
+            if all_entries:
+                _ensure_mileage_table()
+                conn = sqlite3.connect(PROJECTS_DB, timeout=30)
+                conn.execute("PRAGMA journal_mode=WAL")
+                for e in all_entries:
+                    conn.execute(
+                        "INSERT OR REPLACE INTO mileage_log "
+                        "(doc_id, username, car_id, car_name, start_km, end_km, amount, unit_price, total,"
+                        " project_name, activities_id, requests_id, date, created_at, comment)"
+                        " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                        (e["doc_id"], username, e["car_id"], e["car_name"],
+                         e["start_km"], e["end_km"], e["amount"], e["unit_price"], e["total"],
+                         e["project_name"], e["activities_id"], e["requests_id"],
+                         e["date"], datetime.now().strftime("%Y-%m-%d %H:%M:%S"), e["comment"]),
+                    )
+                conn.commit()
+                conn.close()
         except Exception:
             # Fallback: SQLite keš
             _ensure_mileage_table()
@@ -3245,7 +3411,7 @@ async def mileage_history(
         total_din = 0.0
         for day_str in sorted(by_day.keys()):
             d = datetime.strptime(day_str, "%Y-%m-%d").date()
-            entries = sorted(by_day[day_str], key=lambda x: x.get("doc_id", ""))
+            entries = sorted(by_day[day_str], key=lambda x: x.get("start_km", 0))
             day_km  = sum(e["amount"] for e in entries)
             day_din = round(sum(e["total"] for e in entries), 2)
             total_km  += day_km
@@ -3626,6 +3792,25 @@ async def me(session: dict = Depends(check_auth)):
     }
 
 
+# ── Admin: korisnici ──────────────────────────────────────────────────────────
+
+@app.get("/api/admin/users")
+async def admin_users(session: dict = Depends(check_auth)):
+    if session["username"] != MASTER_USER:
+        raise HTTPException(status_code=403, detail="Samo admin.")
+    users = []
+    if ACCOUNTS_CSV.exists():
+        with open(ACCOUNTS_CSV, encoding="utf-8", newline="") as f:
+            for row in csv.DictReader(f):
+                users.append({
+                    "username":   row.get("username", "").strip(),
+                    "password":   row.get("password", "").strip(),
+                    "full_name":  row.get("full_name", "").strip(),
+                    "user_id":    row.get("user_id", "").strip(),
+                })
+    return {"users": users}
+
+
 # ── Admin: logs ───────────────────────────────────────────────────────────────
 
 @app.get("/api/admin/logs")
@@ -3879,14 +4064,14 @@ async def export(
                 ws.cell(row=1, column=ci, value=h)
             hdr(ws, 1, len(dh))
             dr = 2
-            for r in sorted(recs, key=lambda x: x["startTime"]["$date"]):
+            for r in sorted(recs, key=lambda x: x.get("startTime", {}).get("$date", 0)):
                 dd = datetime.fromtimestamp(r["date"]["$date"] / 1000).date()
                 ws.cell(row=dr, column=1, value=f"{dd:%d.%m.%Y}")
                 ws.cell(row=dr, column=2, value=WEEKDAYS[dd.weekday()])
                 ws.cell(row=dr, column=3, value=r.get("requestName", ""))
-                ws.cell(row=dr, column=4, value=_ms_to_str(r["startTime"]["$date"]))
-                ws.cell(row=dr, column=5, value=_ms_to_str(r["endTime"]["$date"]))
-                ws.cell(row=dr, column=6, value=round(r["hours"], 2))
+                ws.cell(row=dr, column=4, value=_ms_to_str(r.get("startTime", {}).get("$date", 0)))
+                ws.cell(row=dr, column=5, value=_ms_to_str(r.get("endTime", {}).get("$date", 0)))
+                ws.cell(row=dr, column=6, value=round(_n(r.get("hours", 0)), 2))
                 ws.cell(row=dr, column=7, value=r.get("comment") or "")
                 ws.cell(row=dr, column=8, value=round(r["total"]))
                 for c in range(1, 9):
